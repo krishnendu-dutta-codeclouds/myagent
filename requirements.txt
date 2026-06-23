@@ -7,3 +7,4 @@ pydantic
 PyPDF2
 python-docx
 python-multipart
+llama-cpp-python

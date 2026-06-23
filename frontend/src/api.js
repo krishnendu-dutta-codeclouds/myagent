@@ -53,9 +53,27 @@ export const api = {
       body: JSON.stringify({ url }),
     }),
   trainDocuments: (files) => uploadFiles('/train-documents', files),
+  trainChatGPT: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch(`${BASE}/train-chatgpt`, {
+      method: 'POST',
+      body: formData,
+    }).then(async (res) => {
+      let data;
+      try { data = await res.json(); } catch { data = { detail: 'Invalid response' }; }
+      if (!res.ok) throw new Error(data?.detail || `Failed with ${res.status}`);
+      return data;
+    });
+  },
   getDocuments: () => request('/documents'),
   deleteDocument: (filename) =>
     request(`/documents/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+    }),
+  getLinks: () => request('/links'),
+  deleteLink: (url) =>
+    request(`/links?url=${encodeURIComponent(url)}`, {
       method: 'DELETE',
     }),
   clearAll: () =>
@@ -69,9 +87,43 @@ export const api = {
       body: JSON.stringify({ model }),
     }),
   getLocalModels: () => request('/model-config/models'),
-  chat: (question) =>
+  parseFile: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch(`${BASE}/parse-file`, {
+      method: 'POST',
+      body: formData,
+    }).then(async (res) => {
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        data = { detail: 'Invalid JSON response from server' };
+      }
+      if (!res.ok) {
+        throw new Error(data?.detail || `Parsing failed with ${res.status}`);
+      }
+      return data;
+    });
+  },
+  chat: (question, images = [], attachedText = null, attachedName = null) =>
     request('/chat', {
       method: 'POST',
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({
+        question,
+        images,
+        attached_text: attachedText,
+        attached_name: attachedName,
+      }),
+    }),
+  getModelCatalog: () => request('/model-catalog'),
+  downloadModel: (modelId) =>
+    request('/model-catalog/download', {
+      method: 'POST',
+      body: JSON.stringify({ model_id: modelId }),
+    }),
+  deleteModel: (filename) =>
+    request(`/model-catalog/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
     }),
 };

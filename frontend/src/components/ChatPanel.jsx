@@ -1,21 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import MarkdownRenderer from './MarkdownRenderer.jsx';
 
 const REFUSAL =
-  "I can only answer questions related to this website's products or services.";
+  "The model returned an empty response. Please try again or switch to a different model.";
 
 const SUGGESTIONS = [
-  'Summarize the products and services',
-  'What are the pricing options?',
-  'Who is the target audience?',
-  'What are the key features?',
+  'Create an HTML/CSS landing page design',
+  'Explain how React Context works',
+  'Research modern UI/UX trends',
+  'Write a Node.js API with Express',
 ];
 
 let msgIdCounter = 0;
 const nextId = () => `m-${++msgIdCounter}`;
 
-export default function ChatPanel({ conversation, onUpdate, onTrain }) {
+export default function ChatPanel({ conversation, onUpdate, onTrain, onModelChanged }) {
   const [input, setInput] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [attachedDoc, setAttachedDoc] = useState(null);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -23,12 +26,75 @@ export default function ChatPanel({ conversation, onUpdate, onTrain }) {
   const disabled = false;
   const isEmpty = conversation.messages.length === 0;
 
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const isImage = file.type.startsWith('image/');
+
+    if (isImage) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage({
+          name: file.name,
+          base64: reader.result,
+        });
+      };
+      reader.readAsDataURL(file);
+      setAttachedDoc(null);
+    } else {
+      setSelectedImage(null);
+      setAttachedDoc({
+        name: file.name,
+        text: '',
+        loading: true,
+      });
+      try {
+        const result = await api.parseFile(file);
+        setAttachedDoc({
+          name: file.name,
+          text: result.text,
+          loading: false,
+        });
+      } catch (err) {
+        alert(`Failed to parse document: ${err.message}`);
+        setAttachedDoc(null);
+      }
+    }
+    e.target.value = '';
+  };
+
   // Auto-scroll to the latest message.
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [conversation.messages, loading]);
+
+  // Auto-focus the textarea when switching conversations (e.g., clicking New Chat)
+  useEffect(() => {
+    if (textareaRef.current) {
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 10);
+    }
+  }, [conversation.id]);
+
+  const handlePanelClick = (e) => {
+    if (window.getSelection()?.toString()) return;
+    const target = e.target;
+    if (
+      target.closest?.('button') ||
+      target.closest?.('a') ||
+      target.closest?.('textarea') ||
+      target.closest?.('input') ||
+      target.closest?.('.message-text') ||
+      target.closest?.('.welcome-actions')
+    ) {
+      return;
+    }
+    textareaRef.current?.focus();
+  };
 
   // Auto-resize textarea.
   useEffect(() => {
@@ -42,22 +108,43 @@ export default function ChatPanel({ conversation, onUpdate, onTrain }) {
   const submit = async (e) => {
     e?.preventDefault();
     const question = input.trim();
-    if (!question || loading || disabled) return;
+    if ((!question && !selectedImage && !attachedDoc) || loading || disabled) return;
 
-    const userMsg = { id: nextId(), role: 'user', text: question };
+    const userMsg = {
+      id: nextId(),
+      role: 'user',
+      text: question,
+      image: selectedImage?.base64 || null,
+      docName: attachedDoc?.name || null,
+    };
     const baseMessages = [...conversation.messages, userMsg];
     onUpdate({
       messages: baseMessages,
       title:
-        !conversation.title || conversation.title === 'New chat'
+        (!conversation.title || conversation.title === 'New chat') && question
           ? question.slice(0, 50)
           : conversation.title,
     });
+    
+    const cleanImage = selectedImage ? selectedImage.base64.split(',')[1] : null;
+    const docText = attachedDoc ? attachedDoc.text : null;
+    const docName = attachedDoc ? attachedDoc.name : null;
+
+    setSelectedImage(null);
+    setAttachedDoc(null);
     setInput('');
     setLoading(true);
 
     try {
-      const { answer } = await api.chat(question);
+      const { answer, active_model } = await api.chat(
+        question,
+        cleanImage ? [cleanImage] : [],
+        docText,
+        docName
+      );
+      if (active_model && onModelChanged) {
+        onModelChanged(active_model);
+      }
       const botMsg = {
         id: nextId(),
         role: 'bot',
@@ -84,7 +171,7 @@ export default function ChatPanel({ conversation, onUpdate, onTrain }) {
   };
 
   return (
-    <div className="chat-container">
+    <div className="chat-container" onClick={handlePanelClick}>
       <div className="chat-scroll" ref={scrollRef}>
         {isEmpty ? (
           <WelcomeScreen
@@ -103,6 +190,49 @@ export default function ChatPanel({ conversation, onUpdate, onTrain }) {
       </div>
 
       <div className="input-area">
+        {(selectedImage || attachedDoc) && (
+          <div className="preview-wrapper">
+            {selectedImage && (
+              <div className="image-preview-bar">
+                <img src={selectedImage.base64} alt="Upload preview" className="image-preview-thumb" />
+                <span className="image-preview-name">{selectedImage.name}</span>
+                <button className="image-preview-clear" onClick={() => setSelectedImage(null)} title="Remove image">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            )}
+            {attachedDoc && (
+              <div className="image-preview-bar">
+                {attachedDoc.loading ? (
+                  <div className="typing" style={{ padding: '0 4px', marginRight: '8px', display: 'flex', alignItems: 'center' }}>
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                ) : (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)', flexShrink: 0 }}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                )}
+                <span className="image-preview-name">
+                  {attachedDoc.loading ? `Parsing ${attachedDoc.name}...` : attachedDoc.name}
+                </span>
+                {!attachedDoc.loading && (
+                  <button className="image-preview-clear" onClick={() => setAttachedDoc(null)} title="Remove document">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <form onSubmit={submit} className="input-form">
           <textarea
             ref={textareaRef}
@@ -112,32 +242,46 @@ export default function ChatPanel({ conversation, onUpdate, onTrain }) {
             placeholder={
               disabled
                 ? 'Train on a website to start chatting…'
-                : 'Message Website Chat Agent…'
+                : 'Message Agent UXKD…'
             }
             disabled={disabled || loading}
             rows={1}
           />
-          <button
-            type="submit"
-            className="send-btn"
-            disabled={disabled || loading || !input.trim()}
-            title="Send"
-            aria-label="Send"
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          <div className="input-actions-group">
+            <label className="attach-btn" title="Attach file">
+              <input
+                type="file"
+                accept="image/*,.pdf,.docx,.doc,.txt,.md,.json,.js,.css,.html,.xml,.py,.c,.cpp,.h,.java,.go,.rs,.sh"
+                onChange={handleFileChange}
+                style={{ display: 'none' }}
+                disabled={disabled || loading}
+              />
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </label>
+            <button
+              type="submit"
+              className="send-btn"
+              disabled={disabled || loading || attachedDoc?.loading || (!input.trim() && !selectedImage && !attachedDoc)}
+              title="Send"
+              aria-label="Send"
             >
-              <line x1="12" y1="19" x2="12" y2="5" />
-              <polyline points="5 12 12 5 19 12" />
-            </svg>
-          </button>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
+              </svg>
+            </button>
+          </div>
         </form>
         <p className="input-disclaimer">
           AI-generated responses may contain inaccuracies. Verify important
@@ -181,7 +325,23 @@ function Message({ message, loading }) {
               <span />
             </div>
           ) : (
-            <div className="message-text">{message.text}</div>
+            <div className="message-text">
+              {message.image && (
+                <div className="message-image-container">
+                  <img src={message.image} alt="User attachment" className="message-image" />
+                </div>
+              )}
+              {message.docName && (
+                <div className="message-doc-badge">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span>{message.docName}</span>
+                </div>
+              )}
+              {isUser ? message.text : <MarkdownRenderer text={message.text} />}
+            </div>
           )}
         </div>
       </div>
@@ -208,9 +368,9 @@ function WelcomeScreen({ disabled, onPromptClick, onTrain }) {
           <path d="M2 12l10 5 10-5" />
         </svg>
       </div>
-      <h1 className="welcome-title">How can I help you today?</h1>
+      <h1 className="welcome-title">I'm your Coding & Design Assistant</h1>
       <p className="welcome-sub" style={{ marginBottom: '16px' }}>
-        Ask a general question, or train the agent with website URLs and files to search within them.
+        Ready to help with code generation, UI/UX design, and JS frameworks.
       </p>
       
       <div className="welcome-actions" style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '24px', flexWrap: 'wrap' }}>

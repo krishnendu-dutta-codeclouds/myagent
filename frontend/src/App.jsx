@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar.jsx';
 import ChatPanel from './components/ChatPanel.jsx';
 import TrainModal from './components/TrainModal.jsx';
 import ProfileModal from './components/ProfileModal.jsx';
+import ModelSwitcher from './components/ModelSwitcher.jsx';
 
 const STORAGE_KEY = 'wca.state.v1';
 const THEME_KEY = 'wca.theme';
@@ -87,6 +88,8 @@ export default function App() {
   const [backendOk, setBackendOk] = useState(null);
   const [theme, setTheme] = useState(getInitialTheme);
   const [documents, setDocuments] = useState([]);
+  const [links, setLinks] = useState([]);
+  const [activeModel, setActiveModel] = useState('');
 
   const fetchDocuments = async () => {
     try {
@@ -97,9 +100,22 @@ export default function App() {
     }
   };
 
+  const fetchLinks = async () => {
+    try {
+      const lks = await api.getLinks();
+      setLinks(lks);
+    } catch (err) {
+      console.error('Failed to fetch links:', err);
+    }
+  };
+
   useEffect(() => {
     if (backendOk === true) {
       fetchDocuments();
+      fetchLinks();
+      api.getModelConfig()
+        .then((cfg) => setActiveModel(cfg.model || ''))
+        .catch(() => {});
     }
   }, [backendOk]);
 
@@ -170,6 +186,15 @@ export default function App() {
     }
   };
 
+  const handleDeleteLink = async (url) => {
+    try {
+      await api.deleteLink(url);
+      fetchLinks();
+    } catch (err) {
+      alert(`Failed to delete link: ${err.message}`);
+    }
+  };
+
   const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   const handleClearAll = async () => {
@@ -181,12 +206,14 @@ export default function App() {
       localStorage.removeItem(STORAGE_KEY);
     } catch { /* ignore */ }
     setDocuments([]);
+    setLinks([]);
   };
 
   const handleTrained = (result) => {
     if (result.files_processed) {
       fetchDocuments();
     } else {
+      fetchLinks();
       updateConv(activeId, {
         indexedUrl: result.url,
         chunkCount: result.chunks_indexed,
@@ -207,6 +234,8 @@ export default function App() {
         backendOk={backendOk}
         documents={documents}
         onDeleteDocument={handleDeleteDocument}
+        links={links}
+        onDeleteLink={handleDeleteLink}
         onOpenProfile={() => setProfileModalOpen(true)}
       />
       {sidebarOpen && (
@@ -251,7 +280,7 @@ export default function App() {
           </button>
           <div className="topbar-title">
             <span className={`model-dot ${backendOk ? 'ok' : 'bad'}`} />
-            <span>Website Chat Agent</span>
+            <span>Agent UXKD</span>
             {activeConv?.indexedUrl && (
               <span className="model-url">
                 · {hostnameOf(activeConv.indexedUrl)}
@@ -259,6 +288,11 @@ export default function App() {
             )}
           </div>
           <div className="topbar-actions">
+            <ModelSwitcher
+              activeModel={activeModel}
+              setActiveModel={setActiveModel}
+              backendOk={backendOk}
+            />
             <button
               className="theme-toggle"
               onClick={toggleTheme}
@@ -313,11 +347,12 @@ export default function App() {
             )}
           </div>
         </header>
-        <ChatPanel
+         <ChatPanel
           key={activeConv.id}
           conversation={activeConv}
           onUpdate={(updates) => updateConv(activeConv.id, updates)}
           onTrain={openTrainModal}
+          onModelChanged={setActiveModel}
         />
       </main>
       <TrainModal

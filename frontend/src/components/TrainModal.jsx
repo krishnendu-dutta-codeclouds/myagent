@@ -4,26 +4,36 @@ import { api } from '../api.js';
 export default function TrainModal({ open, onClose, onTrained, initialTab = 'url' }) {
   const [url, setUrl] = useState('');
   const [files, setFiles] = useState([]);
+  const [chatgptFile, setChatgptFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState(initialTab); // 'url' or 'documents'
+  const [successMsg, setSuccessMsg] = useState(null);
+  const [activeTab, setActiveTab] = useState(initialTab);
   const urlInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const chatgptInputRef = useRef(null);
 
+  // Reset state when modal opens and sync to initialTab
   useEffect(() => {
     if (open) {
       setError(null);
+      setSuccessMsg(null);
       setActiveTab(initialTab);
-      const t = setTimeout(() => {
-        if (activeTab === 'url') {
-          urlInputRef.current?.focus();
-        } else {
-          fileInputRef.current?.focus();
-        }
-      }, 60);
-      return () => clearTimeout(t);
     }
-  }, [open, activeTab, initialTab]);
+  }, [open, initialTab]);
+
+  // Auto-focus the relevant input whenever the active tab changes
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => {
+      if (activeTab === 'url') {
+        urlInputRef.current?.focus();
+      } else if (activeTab === 'documents') {
+        fileInputRef.current?.focus();
+      }
+    }, 60);
+    return () => clearTimeout(t);
+  }, [open, activeTab]);
 
   useEffect(() => {
     if (!open) return;
@@ -41,6 +51,7 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
     if (!url.trim()) return;
     setLoading(true);
     setError(null);
+    setSuccessMsg(null);
     try {
       const result = await api.train(url.trim());
       onTrained(result);
@@ -58,11 +69,32 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
     if (files.length === 0) return;
     setLoading(true);
     setError(null);
+    setSuccessMsg(null);
     try {
       const result = await api.trainDocuments(files);
       onTrained(result);
       setFiles([]);
       onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChatGPTSubmit = async (e) => {
+    e.preventDefault();
+    if (!chatgptFile) return;
+    setLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const result = await api.trainChatGPT(chatgptFile);
+      setSuccessMsg(
+        `✅ Indexed ${result.conversations_found} conversations (${result.chunks_indexed} chunks)`
+      );
+      onTrained(result);
+      setChatgptFile(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -83,6 +115,20 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
     }
     setFiles(prev => [...prev, ...validFiles]);
     e.target.value = ''; // Allow re-selecting same file
+  };
+
+  const handleChatGPTFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    if (!['.zip', '.json'].includes(ext)) {
+      setError('Please upload a .zip or .json ChatGPT export file');
+      return;
+    }
+    setError(null);
+    setSuccessMsg(null);
+    setChatgptFile(file);
+    e.target.value = '';
   };
 
   const removeFile = (index) => {
@@ -126,7 +172,7 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
         <div className="modal-tabs">
           <button
             className={`modal-tab ${activeTab === 'url' ? 'active' : ''}`}
-            onClick={() => setActiveTab('url')}
+            onClick={() => { setActiveTab('url'); setError(null); setSuccessMsg(null); }}
             type="button"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -137,7 +183,7 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
           </button>
           <button
             className={`modal-tab ${activeTab === 'documents' ? 'active' : ''}`}
-            onClick={() => setActiveTab('documents')}
+            onClick={() => { setActiveTab('documents'); setError(null); setSuccessMsg(null); }}
             type="button"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -148,6 +194,16 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
               <polyline points="10 9 9 9 8 9" />
             </svg>
             <span>Documents</span>
+          </button>
+          <button
+            className={`modal-tab ${activeTab === 'chatgpt' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('chatgpt'); setError(null); setSuccessMsg(null); }}
+            type="button"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span>ChatGPT Export</span>
           </button>
         </div>
 
@@ -271,8 +327,95 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
           </>
         )}
 
+        {activeTab === 'chatgpt' && (
+          <>
+            <p className="modal-desc">
+              Upload your ChatGPT data export (<code>.zip</code> or <code>conversations.json</code>).
+              We'll parse all conversations and index them for retrieval.
+            </p>
+            <div className="chatgpt-howto">
+              <strong>How to export:</strong>
+              <ol>
+                <li>Go to <strong>ChatGPT → Settings → Data Controls</strong></li>
+                <li>Click <strong>"Export Data"</strong></li>
+                <li>Download the ZIP file from your email</li>
+                <li>Upload it here</li>
+              </ol>
+            </div>
+            <form onSubmit={handleChatGPTSubmit} className="modal-form">
+              <div
+                className="file-drop-zone"
+                onClick={() => chatgptInputRef.current?.click()}
+              >
+                <input
+                  ref={chatgptInputRef}
+                  type="file"
+                  accept=".zip,.json"
+                  onChange={handleChatGPTFileChange}
+                  style={{ display: 'none' }}
+                />
+                <svg
+                  width="40"
+                  height="40"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  <line x1="9" y1="10" x2="15" y2="10" />
+                  <line x1="12" y1="7" x2="12" y2="13" />
+                </svg>
+                <p>Click to select your ChatGPT export file</p>
+                <span className="file-hint">ZIP or JSON file</span>
+              </div>
+
+              {chatgptFile && (
+                <div className="file-list">
+                  <div className="file-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                    <span className="file-name">{chatgptFile.name}</span>
+                    <span className="file-size">
+                      {(chatgptFile.size / (1024 * 1024)).toFixed(1)} MB
+                    </span>
+                    <button
+                      type="button"
+                      className="file-remove"
+                      onClick={() => setChatgptFile(null)}
+                      aria-label="Remove file"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="form-row" style={{ justifyContent: 'flex-end' }}>
+                <button
+                  type="submit"
+                  disabled={loading || !chatgptFile}
+                >
+                  {loading ? 'Parsing & Indexing…' : 'Train on ChatGPT Data'}
+                </button>
+              </div>
+            </form>
+
+            {successMsg && (
+              <div className="success-msg">{successMsg}</div>
+            )}
+          </>
+        )}
+
         {error && <div className="error">⚠️ {error}</div>}
       </div>
     </div>
   );
 }
+

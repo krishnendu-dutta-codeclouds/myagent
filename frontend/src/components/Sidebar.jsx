@@ -11,6 +11,8 @@ export default function Sidebar({
   backendOk,
   documents = [],
   onDeleteDocument,
+  links = [],
+  onDeleteLink,
   onOpenProfile,
 }) {
   return (
@@ -107,7 +109,7 @@ export default function Sidebar({
         </div>
 
         {/* Documents Section */}
-        <div className="sidebar-section documents-section" style={{ height: '50%', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '150px' }}>
+        <div className="sidebar-section documents-section" style={{ flex: 1, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '120px' }}>
           <div className="sidebar-section-header" style={{ padding: '12px 16px 8px 16px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>Uploaded Documents</span>
             <span style={{ fontSize: '10px', background: 'var(--border)', padding: '2px 6px', borderRadius: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
@@ -147,6 +149,69 @@ export default function Sidebar({
                     }}
                     title="Delete document"
                     aria-label="Delete document"
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                    </svg>
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Links Section */}
+        <div className="sidebar-section links-section" style={{ flex: 1, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '120px' }}>
+          <div className="sidebar-section-header" style={{ padding: '12px 16px 8px 16px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Uploaded Links</span>
+            <span style={{ fontSize: '10px', background: 'var(--border)', padding: '2px 6px', borderRadius: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
+              {links.length}
+            </span>
+          </div>
+          <div className="sidebar-nav" style={{ flex: 1, overflowY: 'auto', padding: '0 12px 8px 12px' }}>
+            {links.length === 0 ? (
+              <p className="sidebar-empty">No links uploaded</p>
+            ) : (
+              links.map((link) => (
+                <div
+                  key={link.url}
+                  className="nav-item"
+                  style={{ cursor: 'default' }}
+                >
+                  <svg
+                    className="nav-item-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                  </svg>
+                  <span className="nav-item-title" title={link.url}>{link.url}</span>
+                  <button
+                    className="nav-item-delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteLink(link.url);
+                    }}
+                    title="Delete link"
+                    aria-label="Delete link"
                   >
                     <svg
                       width="14"

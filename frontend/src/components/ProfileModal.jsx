@@ -12,6 +12,7 @@ export default function ProfileModal({ open, onClose, conversations, backendOk, 
   const [localModels, setLocalModels] = useState([]);
   const [modelSaving, setModelSaving] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
+  const [catalogModels, setCatalogModels] = useState([]);
 
   // Reset on open / close
   useEffect(() => {
@@ -21,18 +22,42 @@ export default function ProfileModal({ open, onClose, conversations, backendOk, 
     }
   }, [open]);
 
-  // Fetch current model + available models when modal opens
+  // Fetch current model + available models + catalog when modal opens
   useEffect(() => {
     if (!open || !backendOk) return;
     setModelLoading(true);
-    Promise.all([api.getModelConfig(), api.getLocalModels()])
-      .then(([cfg, mods]) => {
+    Promise.all([api.getModelConfig(), api.getLocalModels(), api.getModelCatalog()])
+      .then(([cfg, mods, cat]) => {
         setModelInput(cfg.model || 'tinyllama');
         setLocalModels(mods.models || []);
+        setCatalogModels(cat.models || []);
       })
       .catch(() => {})
       .finally(() => setModelLoading(false));
   }, [open, backendOk]);
+
+  // Poll model catalog if a model is currently downloading
+  useEffect(() => {
+    let timer;
+    const isDownloading = catalogModels.some(
+      (m) => m.download_status?.status === 'downloading'
+    );
+    if (isDownloading && open && backendOk) {
+      timer = setInterval(() => {
+        api.getModelCatalog()
+          .then((data) => {
+            setCatalogModels(data.models || []);
+            // Also refresh local models to see if it completed
+            return api.getLocalModels();
+          })
+          .then((mods) => {
+            if (mods) setLocalModels(mods.models || []);
+          })
+          .catch(() => {});
+      }, 2000);
+    }
+    return () => clearInterval(timer);
+  }, [catalogModels, open, backendOk]);
 
   // Escape key to close
   useEffect(() => {
@@ -104,6 +129,52 @@ export default function ProfileModal({ open, onClose, conversations, backendOk, 
       setFeedback({ type: 'error', text: `Failed to save model: ${err.message}` });
     } finally {
       setModelSaving(false);
+    }
+  };
+
+  /* ---- Model Download & Delete ---- */
+  const handleDownloadModel = async (modelId) => {
+    setFeedback(null);
+    // Optimistically update to show downloading state immediately
+    setCatalogModels((prev) =>
+      prev.map((m) =>
+        m.id === modelId
+          ? {
+              ...m,
+              download_status: { status: 'downloading', progress: 0, total: 100, error: null },
+            }
+          : m
+      )
+    );
+
+    try {
+      await api.downloadModel(modelId);
+      setFeedback({ type: 'ok', text: `Started downloading model "${modelId}".` });
+      const cat = await api.getModelCatalog();
+      setCatalogModels(cat.models || []);
+      const mods = await api.getLocalModels();
+      setLocalModels(mods.models || []);
+    } catch (err) {
+      setFeedback({ type: 'error', text: `Failed to download: ${err.message}` });
+      const cat = await api.getModelCatalog();
+      setCatalogModels(cat.models || []);
+    }
+  };
+
+  const handleDeleteModel = async (filename) => {
+    if (!window.confirm(`Are you sure you want to delete model file "${filename}"?`)) return;
+    setFeedback(null);
+    try {
+      await api.deleteModel(filename);
+      setFeedback({ type: 'ok', text: `Model file "${filename}" deleted successfully.` });
+      const [cat, mods] = await Promise.all([api.getModelCatalog(), api.getLocalModels()]);
+      setCatalogModels(cat.models || []);
+      setLocalModels(mods.models || []);
+
+      const cfg = await api.getModelConfig();
+      setModelInput(cfg.model || '');
+    } catch (err) {
+      setFeedback({ type: 'error', text: `Failed to delete model: ${err.message}` });
     }
   };
 
@@ -204,6 +275,80 @@ export default function ProfileModal({ open, onClose, conversations, backendOk, 
               {modelSaving ? 'Saving…' : 'Save'}
             </button>
           </div>
+        </div>
+
+        {/* ===== Local GGUF Model Manager ===== */}
+        <div className="profile-section-title">Local GGUF Models (Hugging Face)</div>
+        <div className="gguf-catalog-container">
+          {catalogModels.length === 0 ? (
+            <p className="gguf-empty-msg">No models in catalog or backend offline.</p>
+          ) : (
+            <div className="gguf-catalog-list">
+              {catalogModels.map((m) => {
+                const isDownloading = m.download_status?.status === 'downloading';
+                const isError = m.download_status?.status === 'error';
+                const progress = m.download_status?.progress || 0;
+                const total = m.download_status?.total || 1;
+                const percent = total > 0 ? Math.round((progress / total) * 100) : 0;
+
+                return (
+                  <div key={m.id} className="gguf-catalog-card">
+                    <div className="gguf-card-header">
+                      <div className="gguf-card-title-group">
+                        <strong className="gguf-card-name">{m.name}</strong>
+                        <span className="gguf-card-badge">{m.params} • {m.quantization}</span>
+                      </div>
+
+                      <div className="gguf-card-actions">
+                        {m.downloaded ? (
+                          <button
+                            className="gguf-btn gguf-btn--delete"
+                            onClick={() => handleDeleteModel(m.filename)}
+                            title="Delete model file"
+                            aria-label={`Delete ${m.name}`}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
+                            </svg>
+                          </button>
+                        ) : isDownloading ? (
+                          <span className="gguf-downloading-spinner">
+                            Downloading…
+                          </span>
+                        ) : (
+                          <button
+                            className="gguf-btn gguf-btn--download"
+                            onClick={() => handleDownloadModel(m.id)}
+                            title="Download model"
+                            aria-label={`Download ${m.name}`}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                            </svg>
+                            Download ({Math.round(m.size_mb)} MB)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="gguf-card-desc">{m.description}</p>
+
+                    {isDownloading && (
+                      <div className="gguf-progress-container">
+                        <div className="gguf-progress-bar" style={{ width: `${percent}%` }} />
+                        <span className="gguf-progress-text">{percent}% ({(progress / (1024 * 1024)).toFixed(1)} / {(total / (1024 * 1024)).toFixed(1)} MB)</span>
+                      </div>
+                    )}
+                    {isError && (
+                      <div className="gguf-card-error">
+                        ⚠️ Error: {m.download_status.error}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* ===== Data Management ===== */}

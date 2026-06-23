@@ -1,0 +1,10 @@
+{
+  "name": "website-chat-agent",
+  "version": "1.0.0",
+  "description": "Root runner for Website Chat Agent (frontend, backend, and local GGUF provider)",
+  "private": true,
+  "scripts": {
+    "dev": "./run.sh",
+    "start": "./run.sh"
+  }
+}

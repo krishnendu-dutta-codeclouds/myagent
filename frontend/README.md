@@ -1,4 +1,4 @@
-# Website Chat Agent — Frontend
+# Agent UXKD — Frontend
 
 A React + Vite SPA for the local Ollama chatbot. It lets you:
 

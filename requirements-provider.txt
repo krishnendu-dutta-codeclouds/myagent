@@ -1,0 +1,198 @@
+# Local LLM Provider (Ollama-Compatible Models Without Ollama)
+
+## Purpose
+
+Create a **local AI model provider** inside the application that can run **Ollama-downloadable models** (e.g., TinyLlama) **without installing or running the Ollama app**.
+
+The provider must:
+- Load GGUF models directly
+- Run fully offline
+- Expose a local API for chat/agent usage
+- Be free to use permanently
+- Act as a drop-in local LLM backend
+
+This provider replaces Ollama while using the same underlying models.
+
+---
+
+## Key Requirements
+
+- No Ollama runtime or CLI
+- Use open-source GGUF models
+- Local inference only (CPU-first)
+- API-based provider (FastAPI)
+- Agent & RAG compatible
+- Zero cloud dependency
+- Free and permanent usage
+
+---
+
+## Core Concept
+
+Ollama models are standard **GGUF** files.
+Ollama is only a runtime wrapper.
+
+This provider directly runs the same GGUF models using **llama.cpp**.
+
+---
+
+## High-Level Architecture
+
+
+
+---
+
+## Technology Stack
+
+| Layer | Technology |
+|------|-----------|
+| Runtime | llama.cpp |
+| Python Binding | llama-cpp-python |
+| API Framework | FastAPI |
+| Model Format | GGUF |
+| Models | TinyLlama, Mistral, LLaMA |
+| OS | macOS / Linux |
+| License | Open Source |
+
+---
+
+## Model Compatibility
+
+The provider must support models commonly distributed via Ollama:
+
+- TinyLlama (1.1B)
+- Mistral 7B
+- LLaMA 2 / 3 (GGUF)
+- Any GGUF-compatible model
+
+Models are downloaded manually from Hugging Face.
+
+---
+
+## Example Model Source
+
+
+
+Recommended quantization:
+- `q4_K_M` (best CPU balance)
+
+---
+
+## Provider Responsibilities
+
+- Load GGUF model into memory
+- Accept prompt input
+- Generate text completion
+- Return structured response
+- Support future streaming
+- Allow model switching
+
+---
+
+## API Contract (OpenAI-Compatible)
+
+The local provider server will run as an independent microservice (e.g., at `http://127.0.0.1:8001`) and expose OpenAI-compatible endpoints so that any standard LLM client or agent framework can connect to it.
+
+### Endpoints
+
+#### 1. Chat Completions
+*   **Path:** `/v1/chat/completions`
+*   **Method:** `POST`
+*   **Request Body (JSON):**
+    ```json
+    {
+      "model": "tinyllama-1.1b-chat",
+      "messages": [
+        { "role": "system", "content": "You are a helpful assistant." },
+        { "role": "user", "content": "Hello!" }
+      ],
+      "temperature": 0.7,
+      "max_tokens": 512,
+      "stream": false
+    }
+    ```
+*   **Response Body (JSON):**
+    ```json
+    {
+      "id": "chatcmpl-uniqueid",
+      "object": "chat.completion",
+      "created": 1680000000,
+      "model": "tinyllama-1.1b-chat",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Hello! How can I help you today?"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 15,
+        "completion_tokens": 9,
+        "total_tokens": 24
+      }
+    }
+    ```
+
+#### 2. List Models
+*   **Path:** `/v1/models`
+*   **Method:** `GET`
+*   **Response Body (JSON):**
+    ```json
+    {
+      "object": "list",
+      "data": [
+        {
+          "id": "tinyllama-1.1b-chat",
+          "object": "model",
+          "created": 1680000000,
+          "owned_by": "local"
+        }
+      ]
+    }
+    ```
+
+---
+
+## Directory & File Setup
+
+To support GGUF models, the project will use a dedicated folder structure:
+*   `models/`: Directory where downloaded `.gguf` files are stored.
+*   `backend/local_provider.py`: The FastAPI server containing the llama.cpp interface.
+
+---
+
+## Setup & Running Instructions
+
+### 1. Installation
+Install requirements:
+```bash
+pip install llama-cpp-python fastapi uvicorn pydantic
+```
+*Note: For macOS hardware acceleration (Metal), install with:*
+```bash
+CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --upgrade --force-reinstall --no-cache-dir
+```
+
+### 2. Download Model
+Download a small GGUF model to the `models/` directory:
+```bash
+mkdir -p models
+curl -L -o models/tinyllama-1.1b-chat.Q4_K_M.gguf https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+```
+
+### 3. Server Startup
+The local model provider server will be started on port `8001`:
+```bash
+uvicorn backend.local_provider:app --host 127.0.0.1 --port 8001
+```
+
+---
+
+## Integration with Agent Backend
+
+The main web application chat logic (in `backend/llm.py` or similar) will detect when a local provider model is selected. Instead of routing requests to `http://127.0.0.1:11434` (Ollama), it will route them to `http://127.0.0.1:8001/v1/chat/completions`.
+
+This allows seamless model swapping between local GGUF models and Ollama (or cloud models) without requiring the user to run Ollama.

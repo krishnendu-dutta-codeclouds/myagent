@@ -1,0 +1,26 @@
+# Environments
+venv/
+.env
+
+# Models
+models/
+
+# Database / Chunks
+chroma/
+
+# Node modules
+node_modules/
+frontend/node_modules/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS files
+.DS_Store
+*.swp
+
+# Temporary files
+test_google.py
+backend/uploads/
