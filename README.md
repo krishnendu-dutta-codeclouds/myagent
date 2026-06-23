@@ -1,91 +1,80 @@
-# Local Website-Specific AI Chatbot Agent (Ollama + TinyLlama)
+# Local AI Coding & Research Assistant
 
-A fully-local chatbot that answers **only** from a given website's content.
-Built with **Ollama**, **TinyLlama**, **nomic-embed-text**, **FastAPI**, and **ChromaDB**.
+A fully-local, private AI chatbot and engineering assistant. Designed as an expert Software Engineer, UI/UX Designer, and Technical Researcher. It runs entirely on your local machine using standalone `.gguf` models, avoiding any cloud API costs or data privacy concerns.
 
-## Features
+## ✨ Features
 
-- 100% offline on macOS (no cloud APIs)
-- Uses free open-source Ollama models
-- Trains on any website URL
-- Strict refusal of out-of-scope questions
-- Prevents hallucinations by grounding every answer in retrieved chunks
+- **100% Offline AI Inference**: Runs `.gguf` models locally using `llama-cpp-python` and a dedicated local provider microservice.
+- **Expert Coding & UI/UX Support**: Generates high-quality code (HTML, CSS, JS, Tailwind, GSAP) with semantic naming and high-level architectural reasoning.
+- **Dynamic "Thinking" Process**: Before answering, the AI formulates an architectural design, query analysis, and verification plan.
+- **Multi-Source RAG (Retrieval-Augmented Generation)**:
+  - **Live Web Search**: Automatically fetches live data via Google (with DuckDuckGo fallback).
+  - **URL Training**: Scrapes and indexes content from any URL.
+  - **File Training**: Supports PDFs, TXT, DOCX, and CSV files.
+  - **ChatGPT Exports**: Indexes your past ChatGPT conversation exports (`.html` files) to learn from your previous chats.
+- **Beautiful React Frontend**: Features syntax highlighting, dark mode, animated suggestions, and an integrated chat panel.
+- **Automatic Model Management**: Automatically downloads lightweight models like `TinyLlama` if no model is found in your `models/` directory.
 
-## Tech Stack
+## 🛠️ Tech Stack
 
 | Layer       | Technology             |
 |-------------|------------------------|
-| LLM         | TinyLlama (Ollama)     |
-| Embeddings  | nomic-embed-text       |
+| Frontend    | React, Vite, CSS       |
 | Backend     | FastAPI (Python)       |
-| Scraping    | requests, BeautifulSoup|
+| LLM Engine  | llama-cpp-python       |
+| Embeddings  | nomic-embed-text       |
 | Vector DB   | ChromaDB (local)       |
-| Platform    | macOS                  |
+| Web Scraper | requests, BeautifulSoup|
 
-## Project Structure
+## 🚀 Getting Started
 
+### 1. Prerequisites
+
+- Python 3.10+
+- Node.js & npm (for the frontend)
+- [Ollama](https://ollama.com) (Optional, for embeddings and fallback models)
+
+If using Ollama for embeddings, ensure you have the `nomic-embed-text` model:
+```bash
+ollama pull nomic-embed-text
 ```
+
+### 2. Run the Application
+
+We have provided a unified startup script that installs all dependencies and launches both the backend and frontend simultaneously.
+
+```bash
+chmod +x run.sh
+./run.sh
+```
+
+- **Frontend UI**: `http://localhost:5173`
+- **Backend API**: `http://localhost:8000`
+- **Local Model Provider API**: `http://localhost:8001`
+
+### 3. Adding Custom Models
+
+By default, the application will auto-download `TinyLlama` if the `models/` directory is empty. 
+To use stronger local models, simply download any `.gguf` formatted model from HuggingFace (e.g., LLaMA-3, Mistral, CodeQwen) and drop it inside the `models/` folder. The app will automatically detect it!
+
+## 🧠 System Architecture
+
+```text
 website-chat-agent/
 ├── backend/
-│   ├── __init__.py
-│   ├── scraper.py        # Download + clean website text
-│   ├── chunker.py        # Split text into overlapping chunks
-│   ├── embeddings.py     # nomic-embed-text via Ollama CLI
-│   ├── vector_store.py   # ChromaDB persistence + retrieval
-│   ├── prompts.py        # System prompt + refusal guard
-│   ├── llm.py            # TinyLlama wrapper
-│   └── rag.py            # End-to-end train + answer pipeline
-├── main.py               # FastAPI app (/train, /chat)
-├── requirements.txt
-└── README.md
+│   ├── local_inference.py # Standalone llama-cpp-python integration
+│   ├── local_provider.py  # Local inference microservice (Port 8001)
+│   ├── rag.py             # Retrieval-Augmented Generation & prompt logic
+│   ├── scraper.py         # Google/DDG Search & Web Scraping
+│   └── vector_store.py    # ChromaDB database
+├── frontend/
+│   ├── src/               # React application code
+│   └── index.html
+├── models/                # Place your .gguf models here
+├── run.sh                 # Unified startup script
+└── requirements.txt       # Python dependencies
 ```
 
-## 1. Install Ollama and pull the models
-
-```bash
-brew install ollama
-ollama pull tinyllama
-ollama pull nomic-embed-text
-ollama serve          # keep this running in a separate terminal
-```
-
-## 2. Set up the Python environment
-
-```bash
-cd website-chat-agent
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-## 3. Run the API
-
-```bash
-uvicorn main:app --reload
-```
-
-The server starts on `http://127.0.0.1:8000`.
-
-## 4. Train on a website
-
-```bash
-curl -X POST http://127.0.0.1:8000/train \
-     -H "Content-Type: application/json" \
-     -d '{"url": "https://example.com"}'
-```
-
-## 5. Ask a question
-
-```bash
-curl -X POST http://127.0.0.1:8000/chat \
-     -H "Content-Type: application/json" \
-     -d '{"question": "What products do you offer?"}'
-```
-
-If the question is unrelated to the indexed website, the API returns:
-
-> I can only answer questions related to this website's products or services.
-
-## License
+## 📝 License
 
 MIT
