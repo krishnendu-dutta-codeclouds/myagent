@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+requests
+beautifulsoup4
+chromadb
+pydantic
+PyPDF2
+python-docx
+python-multipart
