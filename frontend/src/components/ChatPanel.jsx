@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import MarkdownRenderer from './MarkdownRenderer.jsx';
+import JSZip from 'jszip';
 
 const REFUSAL =
   "The model returned an empty response. Please try again or switch to a different model.";
@@ -1099,6 +1100,42 @@ export default function ChatPanel({
   );
 }
 
+const extractWebCodeBlocks = (text) => {
+  if (!text) return null;
+  const lines = text.split('\n');
+  const blocks = [];
+  let inBlock = false;
+  let lang = '';
+  let content = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (inBlock) {
+      if (trimmed.startsWith('```')) {
+        blocks.push({ lang: lang.toLowerCase(), content: content.join('\n') });
+        inBlock = false;
+        content = [];
+        lang = '';
+      } else {
+        content.push(line);
+      }
+    } else {
+      if (trimmed.startsWith('```')) {
+        inBlock = true;
+        lang = trimmed.slice(3).trim();
+      }
+    }
+  }
+  
+  // Filter for web files
+  const webBlocks = blocks.filter(b => 
+    ['html', 'htm', 'css', 'javascript', 'js', 'jsx', 'typescript', 'ts'].includes(b.lang)
+  );
+  
+  return webBlocks.length > 0 ? webBlocks : null;
+};
+
 function Message({
   message,
   loading,
@@ -1108,11 +1145,102 @@ function Message({
   handleRetry,
   handleBranch,
 }) {
-  const isUser = !loading && message.role === 'user';
+  const isUser = !loading && message && message.role === 'user';
   const [copied, setCopied] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showSources, setShowSources] = useState(false);
+
+  const webBlocks = !isUser && message && extractWebCodeBlocks(message.text);
+
+  const handleDownloadWebProject = async () => {
+    if (!message) return;
+    const blocks = extractWebCodeBlocks(message.text);
+    if (!blocks) return;
+
+    try {
+      const zip = new JSZip();
+      
+      let htmlCode = '';
+      let cssCode = '';
+      let jsCode = '';
+      
+      const otherFiles = [];
+
+      blocks.forEach((block) => {
+        const lang = block.lang;
+        if (lang === 'html' || lang === 'htm') {
+          if (!htmlCode) htmlCode = block.content;
+          else otherFiles.push({ name: `index_${otherFiles.length + 1}.html`, content: block.content });
+        } else if (lang === 'css') {
+          if (!cssCode) cssCode = block.content;
+          else otherFiles.push({ name: `style_${otherFiles.length + 1}.css`, content: block.content });
+        } else if (['javascript', 'js', 'jsx', 'typescript', 'ts'].includes(lang)) {
+          if (!jsCode) jsCode = block.content;
+          else otherFiles.push({ name: `script_${otherFiles.length + 1}.js`, content: block.content });
+        }
+      });
+
+      // Inject link tags into HTML if we have them and they aren't linked
+      if (htmlCode) {
+        let updatedHtml = htmlCode;
+        
+        if (cssCode && !updatedHtml.includes('style.css')) {
+          if (updatedHtml.includes('</head>')) {
+            updatedHtml = updatedHtml.replace('</head>', '  <link rel="stylesheet" href="style.css">\n</head>');
+          } else if (updatedHtml.includes('<body>')) {
+            updatedHtml = updatedHtml.replace('<body>', '<body>\n  <link rel="stylesheet" href="style.css">');
+          } else {
+            updatedHtml = '<link rel="stylesheet" href="style.css">\n' + updatedHtml;
+          }
+        }
+        
+        if (jsCode && !updatedHtml.includes('script.js')) {
+          if (updatedHtml.includes('</body>')) {
+            updatedHtml = updatedHtml.replace('</body>', '  <script src="script.js"></script>\n</body>');
+          } else {
+            updatedHtml = updatedHtml + '\n<script src="script.js"></script>';
+          }
+        }
+        
+        zip.file('index.html', updatedHtml);
+      }
+
+      if (cssCode) {
+        zip.file('style.css', cssCode);
+      }
+
+      if (jsCode) {
+        zip.file('script.js', jsCode);
+      }
+
+      otherFiles.forEach(file => {
+        zip.file(file.name, file.content);
+      });
+
+      // If we have no index.html but have css/js, create a blank index.html that links them
+      if (!htmlCode && (cssCode || jsCode)) {
+        let blankHtml = '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>AI Generated Web App</title>\n';
+        if (cssCode) blankHtml += '  <link rel="stylesheet" href="style.css">\n';
+        blankHtml += '</head>\n<body>\n  <div id="root"></div>\n  <h1 style="text-align:center; font-family:sans-serif; margin-top:20vh; color:#374151;">AI Web Project</h1>\n  <p style="text-align:center; font-family:sans-serif; color:#6b7280;">Open developer tools or inspect the files to see your project.</p>\n';
+        if (jsCode) blankHtml += '  <script src="script.js"></script>\n';
+        blankHtml += '</body>\n</html>';
+        zip.file('index.html', blankHtml);
+      }
+
+      const contentBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(contentBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `web-project-${message.id}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to create ZIP package:', err);
+    }
+  };
 
   // Reference for clicking outside the more options menu
   const menuRef = useRef(null);
@@ -1267,6 +1395,37 @@ function Message({
               )}
               
               {isUser ? message.text : <MarkdownRenderer text={message.text} />}
+
+              {!isUser && webBlocks && (
+                <div className="web-project-download-card">
+                  <div className="wp-card-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                      <line x1="12" y1="22.08" x2="12" y2="12" />
+                    </svg>
+                  </div>
+                  <div className="wp-card-info">
+                    <div className="wp-card-title">Web Code Package Detected</div>
+                    <div className="wp-card-subtitle">
+                      Contains {webBlocks.map(b => b.lang.toUpperCase()).join(', ')} files
+                    </div>
+                  </div>
+                  <button 
+                    className="wp-card-download-btn" 
+                    onClick={handleDownloadWebProject}
+                    title="Download complete web project as ZIP"
+                    type="button"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    <span>Download Project ZIP</span>
+                  </button>
+                </div>
+              )}
               
               {/* Bot Message Action Bar */}
               {!isUser && (
