@@ -1,0 +1,30 @@
+# Ignore local development files
+venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+*.log
+.DS_Store
+
+# Ignore local ChromaDB (use external vector DB in production)
+chroma/
+
+# Ignore uploads (use Vercel Blob or S3 in production)
+backend/uploads/
+
+# Ignore model files (too large for Vercel)
+models/
+
+# Ignore frontend node_modules and build output
+frontend/node_modules/
+frontend/dist/
+
+# Ignore test files
+test_*.py
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo

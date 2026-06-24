@@ -1672,9 +1672,9 @@ function WelcomeScreen({ disabled, onPromptClick, onTrain }) {
           <path d="M2 12l10 5 10-5" />
         </svg>
       </div>
-      <h1 className="welcome-title">I'm your Coding & Design Assistant</h1>
+      <h1 className="welcome-title">Welcome to Agent UXKD</h1>
       <p className="welcome-sub" style={{ marginBottom: '16px' }}>
-        Ready to help with code generation, UI/UX design, and JS frameworks.
+        Your Hybrid AI assistant. Chat with your documents, websites, and code using Live/Local AI.
       </p>
       
       <div className="welcome-actions" style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '24px', flexWrap: 'wrap' }}>
