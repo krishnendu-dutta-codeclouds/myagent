@@ -424,7 +424,7 @@ def answer_question(
             
     if any(q in q_clean for q in name_queries):
         return {
-            "answer": "Krishnendu Dutta",
+            "answer": "I am Krishnendu Dutta",
             "generated_image": None,
             "generated_video": None,
             "generated_audio": None

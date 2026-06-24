@@ -779,12 +779,12 @@ textarea {
   max-width: 768px;
   margin: 0 auto;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
   background: var(--bg-subtle);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  padding: 8px;
+  border-radius: var(--radius-pill);
+  padding: 8px 12px;
   margin-left: auto;
   margin-right: auto;
   margin: 0 auto;
@@ -3302,7 +3302,6 @@ textarea {
   position: relative;
   display: flex;
   align-items: center;
-  margin-bottom: 2px; /* Align vertically with textarea bottom padding */
 }
 
 .creator-menu-trigger {
