@@ -432,18 +432,18 @@ def ask_llm(prompt: str, model: str | None = None, images: list[str] | None = No
     )
 
 
-def ask_llm_stream(prompt: str, model: str | None = None, images: list[str] | None = None):
-    """Run a prompt through the appropriate backend and yield text chunks in real-time."""
+def _run_stream_for_model(target: str, prompt: str, images: list[str] | None = None):
+    """Internal generator to stream completions for a single specific model target.
+    Raises exceptions on errors so the caller can trigger fallbacks.
+    """
     import json
     import time
-    target = model or _active_model
 
     # ── Route to Groq ────────────────────────────────────────────────
     if target.startswith(GROQ_PREFIX):
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
-            yield "⚠️ GROQ_API_KEY is not set."
-            return
+            raise ValueError("GROQ_API_KEY is not set.")
 
         real_model = target[len(GROQ_PREFIX):]
         if images and "vision" not in real_model.lower():
@@ -470,38 +470,32 @@ def ask_llm_stream(prompt: str, model: str | None = None, images: list[str] | No
             "stream": True
         }
 
-        try:
-            resp = requests.post(url, json=payload, headers=headers, stream=True, timeout=45)
-            resp.raise_for_status()
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                line_str = line.decode("utf-8").strip()
-                if line_str.startswith("data: "):
-                    data_body = line_str[6:]
-                    if data_body == "[DONE]":
-                        break
-                    try:
-                        chunk_json = json.loads(data_body)
-                        choices = chunk_json.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content_chunk = delta.get("content", "")
-                            if content_chunk:
-                                yield content_chunk
-                    except Exception:
-                        pass
-            return
-        except Exception as exc:
-            yield f"⚠️ Groq API stream error: {exc}"
-            return
+        resp = requests.post(url, json=payload, headers=headers, stream=True, timeout=45)
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            line_str = line.decode("utf-8").strip()
+            if line_str.startswith("data: "):
+                data_body = line_str[6:]
+                if data_body == "[DONE]":
+                    break
+                try:
+                    chunk_json = json.loads(data_body)
+                    choices = chunk_json.get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta", {})
+                        content_chunk = delta.get("content", "")
+                        if content_chunk:
+                            yield content_chunk
+                except Exception:
+                    pass
 
     # ── Route to OpenAI ──────────────────────────────────────────────
     elif target.startswith(OPENAI_PREFIX):
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            yield "⚠️ OPENAI_API_KEY is not set."
-            return
+            raise ValueError("OPENAI_API_KEY is not set.")
 
         real_model = target[len(OPENAI_PREFIX):]
         url = "https://api.openai.com/v1/chat/completions"
@@ -525,31 +519,26 @@ def ask_llm_stream(prompt: str, model: str | None = None, images: list[str] | No
             "stream": True
         }
 
-        try:
-            resp = requests.post(url, json=payload, headers=headers, stream=True, timeout=45)
-            resp.raise_for_status()
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                line_str = line.decode("utf-8").strip()
-                if line_str.startswith("data: "):
-                    data_body = line_str[6:]
-                    if data_body == "[DONE]":
-                        break
-                    try:
-                        chunk_json = json.loads(data_body)
-                        choices = chunk_json.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content_chunk = delta.get("content", "")
-                            if content_chunk:
-                                yield content_chunk
-                    except Exception:
-                        pass
-            return
-        except Exception as exc:
-            yield f"⚠️ OpenAI API stream error: {exc}"
-            return
+        resp = requests.post(url, json=payload, headers=headers, stream=True, timeout=45)
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            line_str = line.decode("utf-8").strip()
+            if line_str.startswith("data: "):
+                data_body = line_str[6:]
+                if data_body == "[DONE]":
+                    break
+                try:
+                    chunk_json = json.loads(data_body)
+                    choices = chunk_json.get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta", {})
+                        content_chunk = delta.get("content", "")
+                        if content_chunk:
+                            yield content_chunk
+                except Exception:
+                    pass
 
     # ── Route to Ollama ──────────────────────────────────────────────
     elif not target.startswith(LOCAL_GGUF_PREFIX):
@@ -559,140 +548,81 @@ def ask_llm_stream(prompt: str, model: str | None = None, images: list[str] | No
             "messages": [{"role": "user", "content": prompt}],
             "stream": True
         }
-        try:
-            resp = requests.post(url, json=payload, stream=True, timeout=30)
-            resp.raise_for_status()
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                try:
-                    chunk_json = json.loads(line.decode("utf-8"))
-                    msg = chunk_json.get("message", {})
-                    content_chunk = msg.get("content", "")
-                    if content_chunk:
-                        yield content_chunk
-                except Exception:
-                    pass
-            return
-        except Exception:
-            pass
+        resp = requests.post(url, json=payload, stream=True, timeout=30)
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            try:
+                chunk_json = json.loads(line.decode("utf-8"))
+                msg = chunk_json.get("message", {})
+                content_chunk = msg.get("content", "")
+                if content_chunk:
+                    yield content_chunk
+            except Exception:
+                pass
 
     # ── Synchronous / Simulated Stream Fallback ──────────────────────
-    try:
-        full_res = ask_llm(prompt, model=target, images=images)
+    else:
+        # For local GGUF
+        gguf_filename = target[len(LOCAL_GGUF_PREFIX):]
+        if "auto-download" in gguf_filename.lower():
+            real_filename = download_default_model()
+            target = f"{LOCAL_GGUF_PREFIX}{real_filename}"
+            set_active_model(target)
+        
+        full_res = _ask_local_gguf_with_provider_fallback(prompt, target)
         words = full_res.split(" ")
         for i, word in enumerate(words):
             yield (word + " ") if i < len(words) - 1 else word
             time.sleep(0.005)
+
+
+def ask_llm_stream(prompt: str, model: str | None = None, images: list[str] | None = None):
+    """Run a prompt through the appropriate backend and yield text chunks in real-time.
+    
+    If the primary model fails, the system automatically switches to a working fallback.
+    """
+    target = model or _active_model
+    primary_error = ""
+
+    # Try the primary model
+    try:
+        generator = _run_stream_for_model(target, prompt, images)
+        # Check if the generator yields anything (to catch errors immediately)
+        first_chunk = next(generator)
+        yield first_chunk
+        for chunk in generator:
+            yield chunk
+        return
     except Exception as exc:
-        yield f"⚠️ Inference failed: {exc}"
+        primary_error = str(exc)
 
+    # Self-healing fallback
+    fallbacks = _get_fallback_models(exclude_model=target)
+    errors = [f"{target}: {primary_error}"]
 
+    for fallback in fallbacks:
+        try:
+            # Alert user of fallback switch
+            yield f"⚠️ Automatically switched active model to **{fallback}** because **{target}** returned an error.\n\n"
+            
+            generator = _run_stream_for_model(fallback, prompt, images)
+            first_chunk = next(generator)
+            yield first_chunk
+            for chunk in generator:
+                yield chunk
 
+            # Success — switch active model
+            set_active_model(fallback)
+            return
+        except Exception as retry_exc:
+            errors.append(f"{fallback}: {retry_exc}")
+
+    # All failed
+    yield f"⚠️ All models failed. Errors: {'; '.join(errors)}"
 
 
 def route_and_activate_model(question: str) -> str:
-    """Dynamically choose, set, and return the active model based on the user prompt content and API keys availability."""
-    q_clean = question.lower().strip()
-    
-    # 1. Fetch all available models to check compatibility
-    available = list_local_models()
-    
-    # 2. Check for explicit model requests
-    chosen_model = None
-    if "gpt-4o-mini" in q_clean or "gpt4o-mini" in q_clean or "gpt 4o mini" in q_clean:
-        chosen_model = "openai:gpt-4o-mini"
-    elif "gpt-4o" in q_clean or "gpt4o" in q_clean or "gpt 4o" in q_clean:
-        chosen_model = "openai:gpt-4o"
-    elif "llama-3.3" in q_clean or "llama3.3" in q_clean or "70b" in q_clean:
-        chosen_model = "groq:llama-3.3-70b-versatile"
-    elif "llama-3.1" in q_clean or "llama3.1" in q_clean or "8b" in q_clean:
-        chosen_model = "groq:llama-3.1-8b-instant"
-    elif "tinyllama" in q_clean:
-        for m in available:
-            if "tinyllama" in m.lower():
-                chosen_model = m
-                break
-        if not chosen_model:
-            chosen_model = f"{LOCAL_GGUF_PREFIX}tinyllama-1.1b (auto-download)"
-    elif "ollama" in q_clean:
-        ollama_models = [m for m in available if not m.startswith(GROQ_PREFIX) and not m.startswith(OPENAI_PREFIX) and not m.startswith(LOCAL_GGUF_PREFIX)]
-        if ollama_models:
-            chosen_model = ollama_models[0]
-            
-    # 3. If no explicit model is specified, use heuristics based on prompt type and API keys
-    if not chosen_model or chosen_model not in available:
-        groq_ok = bool(os.getenv("GROQ_API_KEY"))
-        openai_ok = bool(os.getenv("OPENAI_API_KEY"))
-        
-        # Coding & Design keywords
-        code_keywords = [
-            "code", "python", "javascript", "html", "css", "script", "gsap", "tailwind", 
-            "react", "vue", "angular", "node", "typescript", "ts", "js", "jsx", "tsx", 
-            "developer", "programming", "database", "sql", "query", "docker", "api", 
-            "json", "yaml", "xml", "regex", "debug", "compile", "syntax", "refactor"
-        ]
-        is_coding_prompt = any(kw in q_clean for kw in code_keywords)
-        
-        # Lightweight / simple keywords
-        simple_keywords = [
-            "hi", "hello", "hey", "greeting", "who are you", "what is your name", 
-            "translate", "summarize", "explain simply", "define", "what is", "why is"
-        ]
-        is_simple_prompt = any(kw in q_clean for kw in simple_keywords) or len(q_clean) < 35
-        
-        # Local / Offline keywords
-        local_keywords = ["local", "offline", "private", "on-device", "self-hosted", "gguf", "llama.cpp"]
-        is_local_prompt = any(kw in q_clean for kw in local_keywords)
-        
-        if is_local_prompt:
-            gguf_models = [m for m in available if m.startswith(LOCAL_GGUF_PREFIX)]
-            ollama_models = [m for m in available if not m.startswith(GROQ_PREFIX) and not m.startswith(OPENAI_PREFIX) and not m.startswith(LOCAL_GGUF_PREFIX)]
-            if gguf_models:
-                chosen_model = gguf_models[0]
-            elif ollama_models:
-                chosen_model = ollama_models[0]
-            else:
-                chosen_model = f"{LOCAL_GGUF_PREFIX}tinyllama-1.1b (auto-download)"
-                
-        elif is_coding_prompt:
-            if openai_ok and "openai:gpt-4o" in available:
-                chosen_model = "openai:gpt-4o"
-            elif groq_ok and "groq:llama-3.3-70b-versatile" in available:
-                chosen_model = "groq:llama-3.3-70b-versatile"
-            elif openai_ok and "openai:gpt-4o-mini" in available:
-                chosen_model = "openai:gpt-4o-mini"
-            elif groq_ok and "groq:llama-3.1-8b-instant" in available:
-                chosen_model = "groq:llama-3.1-8b-instant"
-            else:
-                chosen_model = _pick_default_model()
-                
-        elif is_simple_prompt:
-            if groq_ok and "groq:llama-3.1-8b-instant" in available:
-                chosen_model = "groq:llama-3.1-8b-instant"
-            elif openai_ok and "openai:gpt-4o-mini" in available:
-                chosen_model = "openai:gpt-4o-mini"
-            elif groq_ok and "groq:llama-3.3-70b-versatile" in available:
-                chosen_model = "groq:llama-3.3-70b-versatile"
-            elif openai_ok and "openai:gpt-4o" in available:
-                chosen_model = "openai:gpt-4o"
-            else:
-                chosen_model = _pick_default_model()
-                
-        else:
-            if groq_ok and "groq:llama-3.3-70b-versatile" in available:
-                chosen_model = "groq:llama-3.3-70b-versatile"
-            elif openai_ok and "openai:gpt-4o" in available:
-                chosen_model = "openai:gpt-4o"
-            elif groq_ok and "groq:llama-3.1-8b-instant" in available:
-                chosen_model = "groq:llama-3.1-8b-instant"
-            elif openai_ok and "openai:gpt-4o-mini" in available:
-                chosen_model = "openai:gpt-4o-mini"
-            else:
-                chosen_model = _pick_default_model()
-                
-    if chosen_model:
-        set_active_model(chosen_model)
-        return chosen_model
-        
+    """Return the currently selected active model without switching based on prompt content."""
     return get_active_model()

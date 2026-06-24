@@ -173,28 +173,60 @@ export default function MultimodalLab() {
   }, [isPlayingVideo, videoSequence]);
 
   /* ==========================================
-     📊 VECTOR EXPLORER (Hugging Face Embedding)
+     📊 VECTOR EXPLORER (SVG Generator)
      ========================================== */
   const [vectorText, setVectorText] = useState('');
-  const [generatedVector, setGeneratedVector] = useState(null);
+  const [generatedVector, setGeneratedVector] = useState(null); // stores svg_code
+  const [svgImageUri, setSvgImageUri] = useState(null); // stores image_uri
   const [vectorMetadata, setVectorMetadata] = useState(null);
   const [vectorLoading, setVectorLoading] = useState(false);
+  const [vectorActiveTab, setVectorActiveTab] = useState('canvas'); // 'canvas' or 'code'
+  const [copyFeedback, setCopyFeedback] = useState(false);
 
-  const handleGenerateVector = async () => {
-    if (!vectorText.trim()) return;
+  const handleGenerateVector = async (overridePrompt = '') => {
+    const promptToUse = typeof overridePrompt === 'string' && overridePrompt.trim() ? overridePrompt : vectorText;
+    if (!promptToUse.trim()) return;
+
+    if (typeof overridePrompt === 'string' && overridePrompt.trim()) {
+      setVectorText(overridePrompt);
+    }
+
     setVectorLoading(true);
     setGeneratedVector(null);
+    setSvgImageUri(null);
     setVectorMetadata(null);
     setFeedback(null);
     try {
-      const res = await api.generateVector(vectorText.trim());
-      setGeneratedVector(res.vector);
+      const res = await api.generateVector(promptToUse.trim());
+      setGeneratedVector(res.svg_code);
+      setSvgImageUri(res.image_uri);
       setVectorMetadata(res.metadata);
+      setVectorActiveTab('canvas');
     } catch (err) {
       setFeedback({ type: 'error', text: err.message });
     } finally {
       setVectorLoading(false);
     }
+  };
+
+  const handleCopySvgCode = () => {
+    if (!generatedVector) return;
+    navigator.clipboard.writeText(generatedVector);
+    setCopyFeedback(true);
+    setTimeout(() => setCopyFeedback(false), 2000);
+  };
+
+  const handleDownloadSvg = () => {
+    if (!generatedVector) return;
+    const blob = new Blob([generatedVector], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vector-art-${Date.now()}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -562,32 +594,54 @@ export default function MultimodalLab() {
         )}
 
         {/* ==========================================
-           📊 VECTOR EXPLORER TAB
+           📊 VECTOR EXPLORER TAB (SVG Art Studio)
            ========================================== */}
         {activeTab === 'vector' && (
           <div className="lab-tab-content">
             <div className="lab-inputs-panel">
-              <div className="lab-section-title">Hugging Face Text-to-Vector</div>
-              <p className="lab-section-desc">Generate mathematical text embedding vectors using <strong>BGE-Large</strong>.</p>
+              <div className="lab-section-title">AI Vector Art Studio (SVG)</div>
+              <p className="lab-section-desc">Generate beautiful, responsive scalable vector graphics (SVG) using LLM-powered code generation.</p>
               
               <div className="lab-form-group">
                 <textarea
                   className="lab-textarea"
                   value={vectorText}
                   onChange={(e) => setVectorText(e.target.value)}
-                  placeholder="Type a word or sentence to vectorize..."
-                  rows={4}
+                  placeholder="Describe the vector graphic you want to generate (e.g., 'minimalist rocket ship launching into space, gradient orange and purple, flat design')..."
+                  rows={5}
                   disabled={vectorLoading}
                 />
+              </div>
+
+              <div className="lab-form-group">
+                <label className="settings-label" style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>
+                  Quick Inspiration:
+                </label>
+                <div className="example-prompts-container">
+                  {[
+                    'Neon futuristic rocket ship',
+                    'Retro synthwave sunset over grid',
+                    'Minimalist geometric tech logo',
+                    'Cute pastel cartoon owl'
+                  ].map((promptText, index) => (
+                    <span
+                      key={index}
+                      className="example-prompt-chip"
+                      onClick={() => !vectorLoading && handleGenerateVector(promptText)}
+                    >
+                      ✨ {promptText}
+                    </span>
+                  ))}
+                </div>
               </div>
 
               <div className="lab-actions-row">
                 <button
                   className="settings-btn lab-btn-glow"
-                  onClick={handleGenerateVector}
+                  onClick={() => handleGenerateVector()}
                   disabled={vectorLoading || !vectorText.trim()}
                 >
-                  {vectorLoading ? 'Vectorizing…' : 'Generate Vector'}
+                  {vectorLoading ? 'Designing Art…' : 'Generate SVG Art'}
                 </button>
               </div>
             </div>
@@ -597,34 +651,77 @@ export default function MultimodalLab() {
                 {vectorLoading ? (
                   <div className="lab-loader-container">
                     <div className="lab-spinner" />
-                    <span>Generating embeddings float array...</span>
+                    <span>Synthesizing vector graphics code...</span>
                   </div>
                 ) : generatedVector ? (
                   <div className="vector-results-container">
                     <div className="vector-results-header">
                       <div className="vector-results-title">
-                        <span>Float Array ({vectorMetadata.dimensions} dimensions)</span>
+                        <div className="vector-preview-tabs">
+                          <button
+                            className={`vector-preview-tab-btn ${vectorActiveTab === 'canvas' ? 'active' : ''}`}
+                            onClick={() => setVectorActiveTab('canvas')}
+                          >
+                            🎨 Canvas
+                          </button>
+                          <button
+                            className={`vector-preview-tab-btn ${vectorActiveTab === 'code' ? 'active' : ''}`}
+                            onClick={() => setVectorActiveTab('code')}
+                          >
+                            💻 SVG Code
+                          </button>
+                        </div>
+                        <span className="vector-model-badge">{vectorMetadata.model}</span>
                       </div>
-                      <span className="vector-model-badge">{vectorMetadata.model}</span>
+                      
+                      <div className="vector-actions-group">
+                        <button
+                          className="vector-action-btn"
+                          onClick={handleCopySvgCode}
+                          title="Copy SVG XML to clipboard"
+                        >
+                          {copyFeedback ? '✓ Copied!' : (
+                            <>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                              </svg>
+                              Copy Code
+                            </>
+                          )}
+                        </button>
+                        <button
+                          className="vector-action-btn"
+                          onClick={handleDownloadSvg}
+                          title="Download as .svg file"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          Download
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="vector-array-box">
-                      {/* Interactive scrolling vector list */}
-                      {generatedVector.map((val, idx) => (
-                        <div key={idx} className="vector-cell" title={`Dimension ${idx}: ${val}`}>
-                          <span className="vector-idx">{idx}</span>
-                          <span className="vector-val">{val.toFixed(6)}</span>
-                        </div>
-                      ))}
-                    </div>
+                    {vectorActiveTab === 'canvas' ? (
+                      <div className="svg-canvas-container" title="Interactive Vector Canvas">
+                        {svgImageUri && (
+                          <img src={svgImageUri} alt="AI Generated SVG Vector Art" />
+                        )}
+                      </div>
+                    ) : (
+                      <pre className="svg-code-box">{generatedVector}</pre>
+                    )}
                   </div>
                 ) : (
                   <div className="lab-empty-preview">
                     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M3 3v18h18" />
-                      <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
+                      <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" strokeWidth="1.5" />
+                      <path d="M12 8V16M8 12H16" strokeWidth="1.5" strokeLinecap="round" />
                     </svg>
-                    <span>Your text embeddings float array will appear here.</span>
+                    <span>Your custom vector masterpiece will render here.</span>
                   </div>
                 )}
               </div>

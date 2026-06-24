@@ -449,12 +449,16 @@ def generate_image_endpoint(payload: PromptRequest) -> dict:
 
 @app.post("/multimodal/vector")
 def generate_vector_endpoint(payload: TextRequest) -> dict:
-    """Generate text embeddings using Hugging Face BGE-Large."""
+    """Generate SVG code and an SVG image from text."""
     if not payload.text.strip():
         raise HTTPException(status_code=400, detail="Text must not be empty")
     try:
-        vector, metadata = generate_vector(payload.text.strip())
-        return {"vector": vector, "metadata": metadata}
+        svg_code, image_uri, metadata = generate_vector(payload.text.strip())
+        return {
+            "svg_code": svg_code,
+            "image_uri": image_uri,
+            "metadata": metadata
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

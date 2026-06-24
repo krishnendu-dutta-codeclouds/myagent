@@ -67,40 +67,97 @@ def generate_image(prompt: str) -> str:
     raise RuntimeError(f"Failed to generate image: Model {model_id} took too long to load.")
 
 
-def generate_vector(text: str) -> Tuple[List[float], Dict[str, Any]]:
+def generate_vector(text: str) -> Tuple[str, str, Dict[str, Any]]:
     """
-    Generate vector embeddings from text using Hugging Face's BGE-Large model.
-    Returns the vector array and metadata.
+    Generate SVG code and an SVG image (data URI) from text using the active LLM.
+    Returns a tuple of (svg_code, image_uri, metadata).
     """
-    model_id = "BAAI/bge-large-en-v1.5"
-    url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
+    from .llm import ask_llm, get_active_model
+    import re
     
-    headers = get_hf_headers()
-    payload = {"inputs": text}
+    active_model = get_active_model()
+    
+    system_prompt = (
+        "You are an expert SVG designer and developer. Your task is to generate high-quality, valid, raw SVG code "
+        "based on the user's prompt. Do NOT write any English explanations, introductions, or markdown formatting "
+        "outside the SVG. Output ONLY the raw SVG code starting with <svg> and ending with </svg>.\n\n"
+        "Guidelines:\n"
+        "- The SVG must be modern, beautifully styled, and look premium.\n"
+        "- Use vibrant colors, gradients, clean shapes, paths, and patterns.\n"
+        "- Ensure it has viewBox, width='100%', height='100%' (or appropriate responsive settings).\n"
+        "- Include proper namespace xmlns=\"http://www.w3.org/2000/svg\".\n"
+        "- Make sure all tags are properly closed and valid XML.\n"
+        "- Add rich details, shadows, and layers to make it a masterpiece.\n"
+        "- Do not use any external images or fonts."
+    )
+    
+    prompt = f"{system_prompt}\n\nUser Prompt: Generate a beautiful SVG for: '{text}'"
     
     try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=30)
-        resp.raise_for_status()
-        vector = resp.json()
+        response = ask_llm(prompt)
         
-        # Sometimes the API returns a nested list
-        if isinstance(vector, list) and len(vector) > 0 and isinstance(vector[0], list):
-            vector = vector[0]
+        # Robustly extract the SVG block
+        svg_code = ""
+        match = re.search(r"<svg.*?</svg>", response, re.DOTALL | re.IGNORECASE)
+        if match:
+            svg_code = match.group(0)
+        else:
+            # Fallback: check if there's markdown code block and extract from it
+            cleaned = response.strip()
+            if "```" in cleaned:
+                code_blocks = re.findall(r"```(?:xml|svg)?\s*(.*?)\s*```", cleaned, re.DOTALL | re.IGNORECASE)
+                if code_blocks:
+                    for block in code_blocks:
+                        if "<svg" in block:
+                            sub_match = re.search(r"<svg.*?</svg>", block, re.DOTALL | re.IGNORECASE)
+                            if sub_match:
+                                svg_code = sub_match.group(0)
+                                break
+                            else:
+                                svg_code = block
+                                break
+            if not svg_code:
+                # Last resort, use the cleaned response if it looks like SVG
+                if "<svg" in cleaned.lower() and "</svg>" in cleaned.lower():
+                    svg_code = cleaned
+        
+        # Fallback if SVG extraction completely failed
+        if not svg_code or "<svg" not in svg_code.lower():
+            svg_code = (
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">'
+                '<rect width="100%" height="100%" fill="#111827" rx="10"/>'
+                '<text x="50%" y="45%" dominant-baseline="middle" text-anchor="middle" fill="#ef4444" font-family="sans-serif" font-weight="bold" font-size="14">'
+                'Generation Error'
+                '</text>'
+                '<text x="50%" y="60%" dominant-baseline="middle" text-anchor="middle" fill="#9ca3af" font-family="sans-serif" font-size="10">'
+                'Failed to extract valid SVG'
+                '</text>'
+                '</svg>'
+            )
             
-        return vector, {
-            "model": model_id,
-            "dimensions": len(vector),
+        # Standardize formatting - ensure viewBox and responsiveness
+        if "viewBox" not in svg_code:
+            # Inject a default viewBox if missing
+            svg_code = svg_code.replace("<svg", '<svg viewBox="0 0 500 500"', 1)
+            
+        # Ensure it has width="100%" and height="100%" for responsive rendering in the preview canvas
+        if "width=" not in svg_code:
+            svg_code = svg_code.replace("<svg", '<svg width="100%"', 1)
+        if "height=" not in svg_code:
+            svg_code = svg_code.replace("<svg", '<svg height="100%"', 1)
+            
+        svg_bytes = svg_code.encode("utf-8")
+        svg_base64 = base64.b64encode(svg_bytes).decode("utf-8")
+        image_uri = f"data:image/svg+xml;base64,{svg_base64}"
+        
+        return svg_code, image_uri, {
+            "model": active_model,
+            "dimensions": "Scalable Vector",
+            "size_bytes": len(svg_code),
             "text_preview": text[:60]
         }
     except Exception as exc:
-        err_str = str(exc)
-        if "permissions to call Inference Providers" in err_str:
-            raise RuntimeError(
-                "Hugging Face API permission error: Your Hugging Face token lacks the 'Make calls to Inference Providers' permission. "
-                "Please go to https://huggingface.co/settings/tokens, edit your active token, and enable the "
-                "'Make calls to Inference Providers' scope under Inference. Alternatively, create and use a new Classic token."
-            )
-        raise RuntimeError(f"Failed to generate vector: {exc}")
+        raise RuntimeError(f"Failed to generate vector SVG: {exc}")
 
 
 def generate_video_sequence(prompt: str) -> Dict[str, Any]:
