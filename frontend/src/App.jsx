@@ -5,6 +5,8 @@ import ChatPanel from './components/ChatPanel.jsx';
 import TrainModal from './components/TrainModal.jsx';
 import ProfileModal from './components/ProfileModal.jsx';
 import ModelSwitcher from './components/ModelSwitcher.jsx';
+import MultimodalLab from './components/MultimodalLab.jsx';
+import ResearchProjects from './components/ResearchProjects.jsx';
 
 const STORAGE_KEY = 'wca.state.v1';
 const THEME_KEY = 'wca.theme';
@@ -77,6 +79,7 @@ export default function App() {
   const initial = loadState();
   const [conversations, setConversations] = useState(initial.conversations);
   const [activeId, setActiveId] = useState(initial.activeId);
+  const [activeView, setActiveView] = useState('chat');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [trainModalOpen, setTrainModalOpen] = useState(false);
   const [trainModalTab, setTrainModalTab] = useState('url');
@@ -91,9 +94,22 @@ export default function App() {
   const [links, setLinks] = useState([]);
   const [activeModel, setActiveModel] = useState('');
 
+  // Projects State
+  const [projects, setProjects] = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+
+  const fetchProjects = async () => {
+    try {
+      const projs = await api.getProjects();
+      setProjects(projs);
+    } catch (err) {
+      console.error('Failed to fetch projects:', err);
+    }
+  };
+
   const fetchDocuments = async () => {
     try {
-      const docs = await api.getDocuments();
+      const docs = await api.getDocuments(activeProjectId);
       setDocuments(docs);
     } catch (err) {
       console.error('Failed to fetch documents:', err);
@@ -102,17 +118,28 @@ export default function App() {
 
   const fetchLinks = async () => {
     try {
-      const lks = await api.getLinks();
+      const lks = await api.getLinks(activeProjectId);
       setLinks(lks);
     } catch (err) {
       console.error('Failed to fetch links:', err);
     }
   };
 
+  // Sync documents and links when active project ID changes
   useEffect(() => {
     if (backendOk === true) {
       fetchDocuments();
       fetchLinks();
+    } else {
+      setDocuments([]);
+      setLinks([]);
+    }
+  }, [activeProjectId, backendOk]);
+
+  // Sync projects and model config on backend ready
+  useEffect(() => {
+    if (backendOk === true) {
+      fetchProjects();
       api.getModelConfig()
         .then((cfg) => setActiveModel(cfg.model || ''))
         .catch(() => {});
@@ -162,6 +189,31 @@ export default function App() {
     const conv = createNewConv();
     setConversations((prev) => [conv, ...prev]);
     setActiveId(conv.id);
+  };
+
+  const branchChat = (parentMessageId, messages) => {
+    const msgIdx = messages.findIndex((m) => m.id === parentMessageId);
+    if (msgIdx < 0) return;
+    
+    // Slice and deep clone messages
+    const branchedMessages = JSON.parse(JSON.stringify(messages.slice(0, msgIdx + 1)));
+    
+    // Find the first user message text to set as the title
+    const firstUserMsg = branchedMessages.find((m) => m.role === 'user');
+    const title = firstUserMsg ? firstUserMsg.text.slice(0, 50) : 'Branched chat';
+    
+    const newConv = {
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+      title: title,
+      messages: branchedMessages,
+      indexedUrl: activeConv?.indexedUrl || null,
+      chunkCount: activeConv?.chunkCount || null,
+      createdAt: Date.now()
+    };
+    
+    setConversations((prev) => [newConv, ...prev]);
+    setActiveId(newConv.id);
+    setActiveView('chat');
   };
 
   const deleteConv = (id) => {
@@ -226,8 +278,8 @@ export default function App() {
       <Sidebar
         conversations={conversations}
         activeId={activeId}
-        onSelect={setActiveId}
-        onNew={newChat}
+        onSelect={(id) => { setActiveId(id); setActiveView('chat'); }}
+        onNew={() => { newChat(); setActiveView('chat'); }}
         onDelete={deleteConv}
         onTrain={() => openTrainModal('url')}
         open={sidebarOpen}
@@ -237,6 +289,11 @@ export default function App() {
         links={links}
         onDeleteLink={handleDeleteLink}
         onOpenProfile={() => setProfileModalOpen(true)}
+        activeView={activeView}
+        onViewChange={setActiveView}
+        activeProjectId={activeProjectId}
+        setActiveProjectId={setActiveProjectId}
+        projects={projects}
       />
       {sidebarOpen && (
         <div
@@ -264,23 +321,28 @@ export default function App() {
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              {sidebarOpen ? (
-                <>
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </>
-              ) : (
-                <>
-                  <line x1="3" y1="6" x2="21" y2="6" />
-                  <line x1="3" y1="12" x2="21" y2="12" />
-                  <line x1="3" y1="18" x2="21" y2="18" />
-                </>
-              )}
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
           <div className="topbar-title">
             <span className={`model-dot ${backendOk ? 'ok' : 'bad'}`} />
             <span>Agent UXKD</span>
+            {activeProjectId && projects.find(p => p.id === activeProjectId) && (
+              <span className="project-badge" style={{
+                marginLeft: '8px',
+                background: 'var(--bg-active-project, rgba(79, 70, 229, 0.1))',
+                color: 'var(--accent)',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                border: '1px solid var(--border-active-project, rgba(79, 70, 229, 0.2))'
+              }}>
+                Scope: {projects.find(p => p.id === activeProjectId).name}
+              </span>
+            )}
             {activeConv?.indexedUrl && (
               <span className="model-url">
                 · {hostnameOf(activeConv.indexedUrl)}
@@ -347,19 +409,37 @@ export default function App() {
             )}
           </div>
         </header>
-         <ChatPanel
-          key={activeConv.id}
-          conversation={activeConv}
-          onUpdate={(updates) => updateConv(activeConv.id, updates)}
-          onTrain={openTrainModal}
-          onModelChanged={setActiveModel}
-        />
+        {activeView === 'chat' && (
+          <ChatPanel
+            key={activeConv.id}
+            conversation={activeConv}
+            onUpdate={(updates) => updateConv(activeConv.id, updates)}
+            onTrain={openTrainModal}
+            onModelChanged={setActiveModel}
+            activeProjectId={activeProjectId}
+            setActiveProjectId={setActiveProjectId}
+            projects={projects}
+            onBranchChat={branchChat}
+          />
+        )}
+        {activeView === 'projects' && (
+          <ResearchProjects
+            activeProjectId={activeProjectId}
+            setActiveProjectId={setActiveProjectId}
+            onViewChange={setActiveView}
+            backendOk={backendOk}
+          />
+        )}
+        {activeView === 'lab' && (
+          <MultimodalLab />
+        )}
       </main>
       <TrainModal
         open={trainModalOpen}
         onClose={() => setTrainModalOpen(false)}
         onTrained={handleTrained}
         initialTab={trainModalTab}
+        projectId={activeProjectId}
       />
       <ProfileModal
         open={profileModalOpen}

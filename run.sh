@@ -9,11 +9,11 @@ echo "=================================================="
 
 # 1. Start GGUF Local LLM Provider on port 8001
 echo "Starting local LLM provider on port 8001..."
-venv/bin/uvicorn backend.local_provider:app --host 127.0.0.1 --port 8001 &
+venv/bin/uvicorn backend.local_provider:app --host 127.0.0.1 --port 8001 --reload &
 
 # 2. Start Main Backend Server on port 8000
 echo "Starting main backend server on port 8000..."
-venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 &
+venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --reload &
 
 # 3. Start Frontend Vite Dev Server
 echo "Starting frontend dev server..."

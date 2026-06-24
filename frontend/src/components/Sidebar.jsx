@@ -14,7 +14,14 @@ export default function Sidebar({
   links = [],
   onDeleteLink,
   onOpenProfile,
+  activeView = 'chat',
+  onViewChange,
+  activeProjectId = null,
+  setActiveProjectId,
+  projects = [],
 }) {
+  const activeProject = projects.find(p => p.id === activeProjectId);
+
   return (
     <aside className={`sidebar ${open ? '' : 'closed'}`}>
       <div className="sidebar-header">
@@ -42,6 +49,132 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-middle" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Primary View Navigation */}
+        <div className="primary-nav-group" style={{ padding: '12px 12px 6px 12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <button
+            className={`nav-view-btn ${activeView === 'chat' ? 'active' : ''}`}
+            onClick={() => onViewChange('chat')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              width: '100%',
+              padding: '10px 12px',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              background: activeView === 'chat' ? 'var(--bg-hover)' : 'transparent',
+              color: activeView === 'chat' ? 'var(--accent)' : 'var(--text-secondary)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'background 0.2s, color 0.2s'
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            Chat Interface
+          </button>
+          
+          <button
+            className={`nav-view-btn ${activeView === 'projects' ? 'active' : ''}`}
+            onClick={() => onViewChange('projects')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              width: '100%',
+              padding: '10px 12px',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              background: activeView === 'projects' ? 'var(--bg-hover)' : 'transparent',
+              color: activeView === 'projects' ? 'var(--accent)' : 'var(--text-secondary)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'background 0.2s, color 0.2s'
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Research Projects
+          </button>
+
+          <button
+            className={`nav-view-btn ${activeView === 'lab' ? 'active' : ''}`}
+            onClick={() => onViewChange('lab')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              width: '100%',
+              padding: '10px 12px',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              background: activeView === 'lab' ? 'var(--bg-hover)' : 'transparent',
+              color: activeView === 'lab' ? 'var(--accent)' : 'var(--text-secondary)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'background 0.2s, color 0.2s'
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+            </svg>
+            AI Multimodal Lab
+          </button>
+        </div>
+
+        {/* Active Project Scope Indicator */}
+        {activeProjectId && activeProject && (
+          <div className="sidebar-active-project" style={{
+            padding: '10px 12px',
+            margin: '6px 12px 12px 12px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--bg-active-project, rgba(79, 70, 229, 0.1))',
+            border: '1px solid var(--border-active-project, rgba(79, 70, 229, 0.2))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" style={{ flexShrink: 0 }}>
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={activeProject.name}>
+                {activeProject.name}
+              </span>
+            </div>
+            <button
+              onClick={() => setActiveProjectId(null)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '2px',
+                display: 'flex',
+                alignItems: 'center',
+                borderRadius: '50%',
+                flexShrink: 0
+              }}
+              title="Exit project scope"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        )}
+
         {/* Conversations Section */}
         <div className="sidebar-section conversations-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '150px' }}>
           <div className="sidebar-section-header" style={{ padding: '8px 16px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -107,157 +240,10 @@ export default function Sidebar({
             ))}
           </nav>
         </div>
-
-        {/* Documents Section */}
-        <div className="sidebar-section documents-section" style={{ flex: 1, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '120px' }}>
-          <div className="sidebar-section-header" style={{ padding: '12px 16px 8px 16px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>Uploaded Documents</span>
-            <span style={{ fontSize: '10px', background: 'var(--border)', padding: '2px 6px', borderRadius: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
-              {documents.length}
-            </span>
-          </div>
-          <div className="sidebar-nav" style={{ flex: 1, overflowY: 'auto', padding: '0 12px 8px 12px' }}>
-            {documents.length === 0 ? (
-              <p className="sidebar-empty">No documents uploaded</p>
-            ) : (
-              documents.map((doc) => (
-                <div
-                  key={doc.filename}
-                  className="nav-item"
-                  style={{ cursor: 'default' }}
-                >
-                  <svg
-                    className="nav-item-icon"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                  </svg>
-                  <span className="nav-item-title" title={doc.filename}>{doc.filename}</span>
-                  <button
-                    className="nav-item-delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteDocument(doc.filename);
-                    }}
-                    title="Delete document"
-                    aria-label="Delete document"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M3 6h18" />
-                      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    </svg>
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Links Section */}
-        <div className="sidebar-section links-section" style={{ flex: 1, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: '120px' }}>
-          <div className="sidebar-section-header" style={{ padding: '12px 16px 8px 16px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>Uploaded Links</span>
-            <span style={{ fontSize: '10px', background: 'var(--border)', padding: '2px 6px', borderRadius: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
-              {links.length}
-            </span>
-          </div>
-          <div className="sidebar-nav" style={{ flex: 1, overflowY: 'auto', padding: '0 12px 8px 12px' }}>
-            {links.length === 0 ? (
-              <p className="sidebar-empty">No links uploaded</p>
-            ) : (
-              links.map((link) => (
-                <div
-                  key={link.url}
-                  className="nav-item"
-                  style={{ cursor: 'default' }}
-                >
-                  <svg
-                    className="nav-item-icon"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                  </svg>
-                  <span className="nav-item-title" title={link.url}>{link.url}</span>
-                  <button
-                    className="nav-item-delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteLink(link.url);
-                    }}
-                    title="Delete link"
-                    aria-label="Delete link"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M3 6h18" />
-                      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    </svg>
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
       </div>
 
       <div className="sidebar-footer">
-        <button
-          className="footer-btn"
-          onClick={onTrain}
-          title="Train on a website"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="16" />
-            <line x1="8" y1="12" x2="16" y2="12" />
-          </svg>
-          <span>Train on website</span>
-        </button>
-        <div className="user-row" onClick={onOpenProfile} title="Profile & Settings" role="button" tabIndex={0} style={{ cursor: 'pointer' }}>
+        <div className="user-row" onClick={onOpenProfile} title="Profile & Settings" role="button" tabIndex={0} style={{ cursor: 'pointer', width: '100%' }}>
           <div className="user-avatar-small">U</div>
           <div className="user-info">
             <div className="user-name">You</div>

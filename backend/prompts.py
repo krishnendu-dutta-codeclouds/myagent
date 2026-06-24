@@ -23,3 +23,17 @@ REFUSAL_MESSAGE = (
 def build_prompt(context: str, question: str) -> str:
     """Assemble the full prompt sent to the local LLM."""
     return SYSTEM_PROMPT.format(context=context, question=question)
+
+
+def build_verification_prompt(context: str, answer: str) -> str:
+    """Build a prompt to verify if the answer is supported by the context."""
+    return (
+        "You are an objective AI evaluator.\n"
+        "Your task is to determine if the generated answer is fully grounded in and supported by the retrieved context.\n"
+        "Answer ONLY \"YES\" if the answer is fully supported by the context, or \"NO\" if it contains hallucinations, fabrications, or information not present in the context.\n"
+        "Do not provide any explanation, preamble, or extra text. Only write \"YES\" or \"NO\".\n\n"
+        f"Retrieved Context:\n{context}\n\n"
+        f"Generated Answer to Evaluate:\n{answer}\n\n"
+        "Grounded (YES/NO):"
+    )
+

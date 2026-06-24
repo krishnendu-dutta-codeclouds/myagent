@@ -22,9 +22,12 @@ async function request(path, options = {}) {
   return data;
 }
 
-async function uploadFiles(path, files) {
+async function uploadFiles(path, files, projectId = null) {
   const formData = new FormData();
   files.forEach(file => formData.append('files', file));
+  if (projectId) {
+    formData.append('project_id', projectId);
+  }
   
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
@@ -47,12 +50,12 @@ async function uploadFiles(path, files) {
 
 export const api = {
   health: () => request('/'),
-  train: (url) =>
+  train: (url, projectId = null) =>
     request('/train', {
       method: 'POST',
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, project_id: projectId }),
     }),
-  trainDocuments: (files) => uploadFiles('/train-documents', files),
+  trainDocuments: (files, projectId = null) => uploadFiles('/train-documents', files, projectId),
   trainChatGPT: (file) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -66,12 +69,14 @@ export const api = {
       return data;
     });
   },
-  getDocuments: () => request('/documents'),
+  getDocuments: (projectId = null) =>
+    request(`/documents${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`),
   deleteDocument: (filename) =>
     request(`/documents/${encodeURIComponent(filename)}`, {
       method: 'DELETE',
     }),
-  getLinks: () => request('/links'),
+  getLinks: (projectId = null) =>
+    request(`/links${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`),
   deleteLink: (url) =>
     request(`/links?url=${encodeURIComponent(url)}`, {
       method: 'DELETE',
@@ -80,6 +85,21 @@ export const api = {
     request('/clear-all', {
       method: 'POST',
     }),
+  
+  // Project Space CRUD APIs
+  getProjects: () => request('/projects'),
+  createProject: (name, description = '') =>
+    request('/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
+    }),
+  deleteProject: (projectId) =>
+    request(`/projects/${projectId}`, {
+      method: 'DELETE',
+    }),
+  getProjectDocuments: (projectId) => request(`/projects/${projectId}/documents`),
+  getProjectLinks: (projectId) => request(`/projects/${projectId}/links`),
+
   getModelConfig: () => request('/model-config'),
   setModelConfig: (model) =>
     request('/model-config', {
@@ -106,7 +126,7 @@ export const api = {
       return data;
     });
   },
-  chat: (question, images = [], attachedText = null, attachedName = null) =>
+  chat: (question, images = [], attachedText = null, attachedName = null, ragMode = 'hybrid', projectId = null) =>
     request('/chat', {
       method: 'POST',
       body: JSON.stringify({
@@ -114,8 +134,64 @@ export const api = {
         images,
         attached_text: attachedText,
         attached_name: attachedName,
+        rag_mode: ragMode,
+        project_id: projectId,
       }),
     }),
+  chatStream: async (question, images = [], attachedText = null, attachedName = null, ragMode = 'hybrid', projectId = null, onChunk) => {
+    const response = await fetch(`${BASE}/chat-stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        question,
+        images,
+        attached_text: attachedText,
+        attached_name: attachedName,
+        rag_mode: ragMode,
+        project_id: projectId,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || 'Stream request failed');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsed = JSON.parse(trimmed);
+          onChunk(parsed);
+        } catch (e) {
+          console.error('Failed to parse stream line:', trimmed, e);
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      try {
+        const parsed = JSON.parse(buffer.trim());
+        onChunk(parsed);
+      } catch (e) {
+        console.error('Failed to parse trailing buffer:', buffer, e);
+      }
+    }
+  },
   getModelCatalog: () => request('/model-catalog'),
   downloadModel: (modelId) =>
     request('/model-catalog/download', {
@@ -126,4 +202,48 @@ export const api = {
     request(`/model-catalog/${encodeURIComponent(filename)}`, {
       method: 'DELETE',
     }),
+  getGuardrailConfig: () => request('/guardrails/config'),
+  setGuardrailConfig: (config) =>
+    request('/guardrails/config', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
+  getUsageStats: () => request('/usage/stats'),
+  resetUsageStats: () =>
+    request('/usage/reset', {
+      method: 'POST',
+    }),
+  sendFeedback: (question, answer, liked, projectId = null) =>
+    request('/feedback', {
+      method: 'POST',
+      body: JSON.stringify({ question, answer, liked, project_id: projectId }),
+    }),
+  generateImage: (prompt) =>
+    request('/multimodal/image', {
+      method: 'POST',
+      body: JSON.stringify({ prompt }),
+    }),
+  generateVector: (text) =>
+    request('/multimodal/vector', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  generateVideo: (prompt) =>
+    request('/multimodal/video', {
+      method: 'POST',
+      body: JSON.stringify({ prompt }),
+    }),
+  transcribeAudio: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch('/api/multimodal/transcribe', {
+      method: 'POST',
+      body: formData,
+    }).then(async (res) => {
+      let data;
+      try { data = await res.json(); } catch { data = { detail: 'Invalid response' }; }
+      if (!res.ok) throw new Error(data?.detail || `Transcription failed with ${res.status}`);
+      return data;
+    });
+  },
 };

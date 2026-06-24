@@ -1,0 +1,7 @@
+{
+  "input_safety_enabled": true,
+  "groundedness_check_enabled": true,
+  "topic_restriction_enabled": true,
+  "guardrail_mode": "balanced",
+  "llm_verification_enabled": false
+}

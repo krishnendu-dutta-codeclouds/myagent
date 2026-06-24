@@ -18,6 +18,12 @@ try:
 except ImportError:
     HAS_DOCX = False
 
+try:
+    import openpyxl
+    HAS_OPENPYXL = True
+except ImportError:
+    HAS_OPENPYXL = False
+
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extract text from a PDF file."""
@@ -58,6 +64,73 @@ def extract_text_from_txt(file_bytes: bytes) -> str:
     return file_bytes.decode('utf-8', errors='replace')
 
 
+def extract_text_from_csv(file_bytes: bytes) -> str:
+    """Extract text from a CSV file."""
+    import csv
+    text_content = extract_text_from_txt(file_bytes)
+    f = io.StringIO(text_content)
+    reader = csv.reader(f)
+    rows = []
+    for row in reader:
+        if row:
+            rows.append(" | ".join(row))
+    return "\n".join(rows)
+
+
+def extract_text_from_xlsx(file_bytes: bytes) -> str:
+    """Extract text from an Excel file (.xlsx, .xls)."""
+    if not HAS_OPENPYXL:
+        raise RuntimeError("openpyxl not installed. Run: pip install openpyxl")
+    
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    sheets_text = []
+    for sheet in wb.worksheets:
+        sheet_rows = []
+        for row in sheet.iter_rows(values_only=True):
+            row_str = [str(cell) if cell is not None else "" for cell in row]
+            if any(row_str):  # keep non-empty rows
+                sheet_rows.append(" | ".join(row_str))
+        if sheet_rows:
+            sheets_text.append(f"Sheet: {sheet.title}\n" + "\n".join(sheet_rows))
+    return "\n\n".join(sheets_text)
+
+
+def extract_text_from_zip(file_bytes: bytes) -> str:
+    """Extract text from all supported files inside a ZIP archive."""
+    import zipfile
+    import io
+    
+    text_parts = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+            for name in zf.namelist():
+                # Skip directories
+                if name.endswith('/'):
+                    continue
+                # Skip hidden files or metadata
+                basename = os.path.basename(name)
+                if basename.startswith('.') or name.startswith('__MACOSX'):
+                    continue
+                
+                ext = os.path.splitext(name.lower())[1]
+                # We support txt, md, pdf, docx, csv, xlsx, xls, json inside the zip (no nested zips to prevent recursion)
+                if ext in ('.pdf', '.docx', '.txt', '.md', '.markdown', '.rst', '.json', '.csv', '.xlsx', '.xls'):
+                    try:
+                        with zf.open(name) as f:
+                            inner_bytes = f.read()
+                        inner_text = extract_text_from_file(name, inner_bytes)
+                        if inner_text.strip():
+                            text_parts.append(f"--- File: {name} ---\n{inner_text}")
+                    except Exception as e:
+                        text_parts.append(f"--- File: {name} (Extraction Failed) ---\nError: {e}")
+    except Exception as e:
+        raise ValueError(f"Failed to parse ZIP archive: {e}")
+        
+    if not text_parts:
+        return "Empty ZIP file or no supported documents found inside."
+    return "\n\n".join(text_parts)
+
+
 def extract_text_from_file(filename: str, file_bytes: bytes) -> str:
     """Extract text from a file based on its extension."""
     ext = os.path.splitext(filename.lower())[1]
@@ -71,9 +144,13 @@ def extract_text_from_file(filename: str, file_bytes: bytes) -> str:
     elif ext == '.json':
         return extract_text_from_txt(file_bytes)
     elif ext == '.zip':
-        return extract_text_from_txt(file_bytes)  # fallback
+        return extract_text_from_zip(file_bytes)
+    elif ext == '.csv':
+        return extract_text_from_csv(file_bytes)
+    elif ext in ('.xlsx', '.xls'):
+        return extract_text_from_xlsx(file_bytes)
     else:
-        raise ValueError(f"Unsupported file type: {ext}. Supported: .pdf, .docx, .txt, .md, .json, .zip")
+        raise ValueError(f"Unsupported file type: {ext}. Supported: .pdf, .docx, .txt, .md, .json, .zip, .csv, .xlsx, .xls")
 
 
 def parse_chatgpt_export(file_bytes: bytes, filename: str) -> List[str]:

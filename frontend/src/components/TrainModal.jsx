@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../api.js';
 
-export default function TrainModal({ open, onClose, onTrained, initialTab = 'url' }) {
+export default function TrainModal({ open, onClose, onTrained, initialTab = 'url', projectId = null }) {
   const [url, setUrl] = useState('');
   const [files, setFiles] = useState([]);
   const [chatgptFile, setChatgptFile] = useState(null);
@@ -9,6 +9,7 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [isDragging, setIsDragging] = useState(false);
   const urlInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const chatgptInputRef = useRef(null);
@@ -19,6 +20,7 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
       setError(null);
       setSuccessMsg(null);
       setActiveTab(initialTab);
+      setIsDragging(false);
     }
   }, [open, initialTab]);
 
@@ -49,14 +51,42 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
   const handleUrlSubmit = async (e) => {
     e.preventDefault();
     if (!url.trim()) return;
+    const urls = url.split(/[\n,]+/).map(u => u.trim()).filter(Boolean);
+    if (urls.length === 0) return;
+
     setLoading(true);
     setError(null);
     setSuccessMsg(null);
+    
+    let successCount = 0;
+    let failCount = 0;
+    const errors = [];
+
     try {
-      const result = await api.train(url.trim());
-      onTrained(result);
+      await Promise.all(urls.map(async (u) => {
+        try {
+          const res = await api.train(u, projectId);
+          successCount++;
+          return res;
+        } catch (err) {
+          failCount++;
+          errors.push(`${u}: ${err.message}`);
+        }
+      }));
+      
       setUrl('');
-      onClose();
+      
+      if (failCount > 0) {
+        setError(`Scraping complete with some issues:\n- Successfully indexed: ${successCount}\n- Failed: ${failCount}\n\nErrors:\n${errors.join('\n')}`);
+      } else {
+        setSuccessMsg(`✅ Successfully indexed all ${successCount} website links!`);
+        if (onTrained) {
+          onTrained({ status: 'Website links indexed successfully', urls_count: successCount });
+        }
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -71,7 +101,7 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
     setError(null);
     setSuccessMsg(null);
     try {
-      const result = await api.trainDocuments(files);
+      const result = await api.trainDocuments(files, projectId);
       onTrained(result);
       setFiles([]);
       onClose();
@@ -104,17 +134,49 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
 
   const handleFileChange = (e) => {
     const newFiles = Array.from(e.target.files);
-    // Validate file types
-    const allowedTypes = ['.pdf', '.docx', '.txt', '.md', '.markdown', '.rst'];
+    const allowedTypes = ['.pdf', '.docx', '.txt', '.md', '.markdown', '.rst', '.csv', '.xlsx', '.xls', '.json', '.zip'];
     const validFiles = newFiles.filter(file => {
       const ext = '.' + file.name.split('.').pop().toLowerCase();
       return allowedTypes.includes(ext);
     });
     if (validFiles.length !== newFiles.length) {
-      setError('Some files were skipped. Supported: PDF, DOCX, TXT, MD');
+      setError('Some files were skipped. Supported formats: PDF, DOCX, TXT, MD, CSV, XLSX, XLS, JSON, ZIP');
     }
     setFiles(prev => [...prev, ...validFiles]);
     e.target.value = ''; // Allow re-selecting same file
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    const filesFromDrop = Array.from(e.dataTransfer.files);
+    if (filesFromDrop.length === 0) return;
+    
+    const allowedTypes = ['.pdf', '.docx', '.txt', '.md', '.markdown', '.rst', '.csv', '.xlsx', '.xls', '.json', '.zip'];
+    const validFiles = filesFromDrop.filter(file => {
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      return allowedTypes.includes(ext);
+    });
+    
+    if (validFiles.length !== filesFromDrop.length) {
+      setError('Some files were skipped. Supported formats: PDF, DOCX, TXT, MD, CSV, XLSX, XLS, JSON, ZIP');
+    }
+    
+    setFiles(prev => [...prev, ...validFiles]);
   };
 
   const handleChatGPTFileChange = (e) => {
@@ -210,22 +272,34 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
         {activeTab === 'url' && (
           <>
             <p className="modal-desc">
-              Paste any URL. We'll scrape it, chunk it, embed with
-              <code> nomic-embed-text</code>, and store it locally in ChromaDB.
+              Paste one or more website URLs (separated by newlines or commas). We'll scrape them in parallel, chunk them, embed them, and store them locally.
             </p>
-            <form onSubmit={handleUrlSubmit} className="modal-form">
-              <div className="form-row">
-                <input
-                  ref={urlInputRef}
-                  type="url"
-                  required
-                  placeholder="https://example.com"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  disabled={loading}
-                />
+            <form onSubmit={handleUrlSubmit} className="modal-form" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <textarea
+                ref={urlInputRef}
+                placeholder="https://example.com/docs&#10;https://example.com/about&#10;(Enter one URL per line or separate by commas)"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                required
+                disabled={loading}
+                rows={4}
+                style={{
+                  width: '100%',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  fontSize: '13.5px',
+                  outline: 'none',
+                  resize: 'vertical',
+                  fontFamily: 'var(--font)',
+                  boxSizing: 'border-box'
+                }}
+              />
+              <div className="form-row" style={{ justifyContent: 'flex-end', width: '100%' }}>
                 <button type="submit" disabled={loading || !url.trim()}>
-                  {loading ? 'Indexing…' : 'Train'}
+                  {loading ? 'Indexing Links…' : 'Train on Links'}
                 </button>
               </div>
             </form>
@@ -235,19 +309,23 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
         {activeTab === 'documents' && (
           <>
             <p className="modal-desc">
-              Upload documents (PDF, DOCX, TXT, MD). We'll extract text,
-              chunk it, embed with <code> nomic-embed-text</code>, and store locally.
+              Upload documents (PDF, DOCX, TXT, MD, CSV, XLSX, XLS, JSON, ZIP). We'll extract text,
+              chunk it, embed it, and store locally.
             </p>
             <form onSubmit={handleFileSubmit} className="modal-form">
               <div
-                className="file-drop-zone"
+                className={`file-drop-zone ${isDragging ? 'dragging' : ''}`}
                 onClick={() => fileInputRef.current?.click()}
+                onDragOver={handleDragOver}
+                onDragEnter={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
               >
                 <input
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept=".pdf,.docx,.txt,.md,.markdown,.rst"
+                  accept=".pdf,.docx,.txt,.md,.markdown,.rst,.csv,.xlsx,.xls,.json,.zip"
                   onChange={handleFileChange}
                   style={{ display: 'none' }}
                 />
@@ -265,8 +343,8 @@ export default function TrainModal({ open, onClose, onTrained, initialTab = 'url
                   <polyline points="17 8 12 3 7 8" />
                   <line x1="12" y1="3" x2="12" y2="15" />
                 </svg>
-                <p>Click to browse or drop files here</p>
-                <span className="file-hint">PDF, DOCX, TXT, MD</span>
+                <p>{isDragging ? 'Drop files now!' : 'Click to browse or drop files here'}</p>
+                <span className="file-hint">PDF, DOCX, TXT, MD, CSV, XLSX, XLS, JSON, ZIP</span>
               </div>
 
               {files.length > 0 && (

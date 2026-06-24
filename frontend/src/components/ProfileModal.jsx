@@ -14,6 +14,23 @@ export default function ProfileModal({ open, onClose, conversations, backendOk, 
   const [modelLoading, setModelLoading] = useState(false);
   const [catalogModels, setCatalogModels] = useState([]);
 
+  // Guardrails state
+  const [guardrailConfig, setGuardrailConfig] = useState({
+    input_safety_enabled: true,
+    groundedness_check_enabled: true,
+    topic_restriction_enabled: true,
+    guardrail_mode: 'balanced',
+    llm_verification_enabled: false,
+  });
+
+  // Usage stats state
+  const [usageStats, setUsageStats] = useState({
+    total_requests: 0,
+    total_tokens: 0,
+    total_latency: 0.0,
+    model_breakdown: {},
+  });
+
   // Reset on open / close
   useEffect(() => {
     if (!open) {
@@ -22,15 +39,23 @@ export default function ProfileModal({ open, onClose, conversations, backendOk, 
     }
   }, [open]);
 
-  // Fetch current model + available models + catalog when modal opens
+  // Fetch current model + available models + catalog + guardrails + usage stats when modal opens
   useEffect(() => {
     if (!open || !backendOk) return;
     setModelLoading(true);
-    Promise.all([api.getModelConfig(), api.getLocalModels(), api.getModelCatalog()])
-      .then(([cfg, mods, cat]) => {
+    Promise.all([
+      api.getModelConfig(),
+      api.getLocalModels(),
+      api.getModelCatalog(),
+      api.getGuardrailConfig().catch(() => null),
+      api.getUsageStats().catch(() => null),
+    ])
+      .then(([cfg, mods, cat, grd, usg]) => {
         setModelInput(cfg.model || 'tinyllama');
         setLocalModels(mods.models || []);
         setCatalogModels(cat.models || []);
+        if (grd) setGuardrailConfig(grd);
+        if (usg) setUsageStats(usg);
       })
       .catch(() => {})
       .finally(() => setModelLoading(false));
@@ -129,6 +154,32 @@ export default function ProfileModal({ open, onClose, conversations, backendOk, 
       setFeedback({ type: 'error', text: `Failed to save model: ${err.message}` });
     } finally {
       setModelSaving(false);
+    }
+  };
+
+  /* ---- Guardrail save ---- */
+  const handleGuardrailChange = async (key, value) => {
+    const updated = { ...guardrailConfig, [key]: value };
+    setGuardrailConfig(updated);
+    setFeedback(null);
+    try {
+      const result = await api.setGuardrailConfig(updated);
+      setGuardrailConfig(result);
+      setFeedback({ type: 'ok', text: 'Safety settings updated.' });
+    } catch (err) {
+      setFeedback({ type: 'error', text: `Failed to update safety settings: ${err.message}` });
+    }
+  };
+
+  /* ---- Usage stats reset ---- */
+  const handleResetUsage = async () => {
+    if (!window.confirm('Are you sure you want to reset all model usage statistics?')) return;
+    try {
+      const result = await api.resetUsageStats();
+      setUsageStats(result);
+      setFeedback({ type: 'ok', text: 'Usage statistics reset.' });
+    } catch (err) {
+      setFeedback({ type: 'error', text: `Failed to reset statistics: ${err.message}` });
     }
   };
 
@@ -349,6 +400,242 @@ export default function ProfileModal({ open, onClose, conversations, backendOk, 
               })}
             </div>
           )}
+        </div>
+
+        {/* ===== Guardrails & AI Safety ===== */}
+        <div className="profile-section-title">Guardrails &amp; AI Safety</div>
+        <div className="guardrails-container">
+          <div className="settings-row">
+            <div className="settings-info">
+              <div className="settings-label">Input Safety Filter</div>
+              <div className="settings-desc">
+                Detects and blocks prompt injections, jailbreak attempts, and malicious instructions.
+              </div>
+            </div>
+            <label className="switch-control" aria-label="Toggle Input Safety Filter">
+              <input
+                type="checkbox"
+                checked={guardrailConfig.input_safety_enabled}
+                onChange={(e) => handleGuardrailChange('input_safety_enabled', e.target.checked)}
+              />
+              <span className="switch-slider" />
+            </label>
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-info">
+              <div className="settings-label">Topic Restriction Guard</div>
+              <div className="settings-desc">
+                Confines the assistant to queries related to the website/documents. Blocks general off-topic banter.
+              </div>
+            </div>
+            <label className="switch-control" aria-label="Toggle Topic Restriction Guard">
+              <input
+                type="checkbox"
+                checked={guardrailConfig.topic_restriction_enabled}
+                onChange={(e) => handleGuardrailChange('topic_restriction_enabled', e.target.checked)}
+              />
+              <span className="switch-slider" />
+            </label>
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-info">
+              <div className="settings-label">Groundedness &amp; Hallucination Guard</div>
+              <div className="settings-desc">
+                Validates if the generated response is strictly supported by the retrieved context.
+              </div>
+            </div>
+            <label className="switch-control" aria-label="Toggle Groundedness Guard">
+              <input
+                type="checkbox"
+                checked={guardrailConfig.groundedness_check_enabled}
+                onChange={(e) => handleGuardrailChange('groundedness_check_enabled', e.target.checked)}
+              />
+              <span className="switch-slider" />
+            </label>
+          </div>
+
+          {guardrailConfig.groundedness_check_enabled && (
+            <div className="settings-row settings-row--nested">
+              <div className="settings-info">
+                <div className="settings-label">Deep LLM Verification</div>
+                <div className="settings-desc">
+                  Uses the active LLM to run a rigorous verification check on the output (highly accurate, but slower).
+                </div>
+              </div>
+              <label className="switch-control" aria-label="Toggle Deep LLM Verification">
+                <input
+                  type="checkbox"
+                  checked={guardrailConfig.llm_verification_enabled}
+                  onChange={(e) => handleGuardrailChange('llm_verification_enabled', e.target.checked)}
+                />
+                <span className="switch-slider" />
+              </label>
+            </div>
+          )}
+
+          <div className="settings-row">
+            <div className="settings-info">
+              <div className="settings-label">Guardrail Mode &amp; Sensitivity</div>
+              <div className="settings-desc">
+                Configure how strictly violations are handled.
+              </div>
+            </div>
+            <div className="guardrail-select-group">
+              <select
+                className="model-select guardrail-select"
+                value={guardrailConfig.guardrail_mode}
+                onChange={(e) => handleGuardrailChange('guardrail_mode', e.target.value)}
+                title="Select Guardrail Mode"
+                aria-label="Select Guardrail Mode"
+              >
+                <option value="balanced">Balanced (Attempts fact-based retry)</option>
+                <option value="strict">Strict (Blocks instantly on violation)</option>
+                <option value="off">Off (No active enforcement)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* ===== Model Usage & Limitations ===== */}
+        <div className="profile-section-title">Model Usage &amp; Rate Limits</div>
+        <div className="usage-container">
+          {/* 3 Grid Metric Cards */}
+          <div className="usage-metrics-grid">
+            <div className="usage-metric-card">
+              <div className="usage-metric-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </div>
+              <div className="usage-metric-info">
+                <span className="usage-metric-value">{usageStats.total_requests}</span>
+                <span className="usage-metric-label">Total Requests</span>
+              </div>
+            </div>
+
+            <div className="usage-metric-card">
+              <div className="usage-metric-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <line x1="9" y1="3" x2="9" y2="21" />
+                </svg>
+              </div>
+              <div className="usage-metric-info">
+                <span className="usage-metric-value">{usageStats.total_tokens.toLocaleString()}</span>
+                <span className="usage-metric-label">Est. Tokens Used</span>
+              </div>
+            </div>
+
+            <div className="usage-metric-card">
+              <div className="usage-metric-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              </div>
+              <div className="usage-metric-info">
+                <span className="usage-metric-value">
+                  {usageStats.total_requests > 0
+                    ? `${(usageStats.total_latency / usageStats.total_requests).toFixed(2)}s`
+                    : '0.00s'}
+                </span>
+                <span className="usage-metric-label">Avg. Latency</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Model Breakdown Progress Bars */}
+          {Object.keys(usageStats.model_breakdown).length > 0 && (
+            <div className="usage-breakdown-section">
+              <div className="usage-section-subtitle">Usage per Model</div>
+              <div className="usage-breakdown-list">
+                {Object.entries(usageStats.model_breakdown).map(([model, data]) => {
+                  const maxRequests = Math.max(
+                    ...Object.values(usageStats.model_breakdown).map((m) => m.requests),
+                    1
+                  );
+                  const percent = Math.round((data.requests / maxRequests) * 100);
+                  const avgLat = data.requests > 0 ? (data.latency / data.requests).toFixed(2) : 0;
+                  
+                  return (
+                    <div key={model} className="usage-breakdown-row">
+                      <div className="usage-breakdown-labels">
+                        <span className="usage-breakdown-model">{model}</span>
+                        <span className="usage-breakdown-stats">
+                          {data.requests} reqs · {data.tokens.toLocaleString()} tokens · {avgLat}s avg
+                        </span>
+                      </div>
+                      <div className="usage-breakdown-bar-bg" title={`${percent}% of max queries`}>
+                        <div className="usage-breakdown-bar-fill" style={{ width: `${percent}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Limitation Card based on active model */}
+          <div className="usage-limit-card">
+            {modelInput.startsWith('groq:') ? (
+              <div className="limit-card-content limit-card-content--groq">
+                <div className="limit-card-header">
+                  <span className="limit-card-dot limit-card-dot--warning" />
+                  <strong>Groq Cloud API Limitations (Free Tier)</strong>
+                </div>
+                <p>
+                  You are currently using the Groq API on the <strong>free tier</strong>. To ensure stable operations, stay mindful of the following constraints:
+                </p>
+                <ul className="limit-bullets">
+                  <li><strong>Llama 3.1 8B Instant:</strong> Limit is 30 RPM (Requests Per Minute), 14,400 RPD (Requests Per Day), and 14,400 TPM (Tokens Per Minute).</li>
+                  <li><strong>Llama 3.3 70B Versatile:</strong> Limit is 30 RPM, 14,400 RPD, and 6,000 TPM.</li>
+                  <li><strong>Self-Healing:</strong> If you hit a rate limit error, your chatbot's built-in fallback will automatically switch your model to local options like GGUF or Ollama.</li>
+                </ul>
+              </div>
+            ) : modelInput.startsWith('openai:') ? (
+              <div className="limit-card-content limit-card-content--openai">
+                <div className="limit-card-header">
+                  <span className="limit-card-dot limit-card-dot--info" />
+                  <strong>OpenAI API Limitations &amp; Billing</strong>
+                </div>
+                <p>
+                  You are querying OpenAI Cloud models. Ensure your API account has positive prepaid credits.
+                </p>
+                <ul className="limit-bullets">
+                  <li><strong>Rate Limits:</strong> Bound to your account Tier (Tier 1 is typically 3 RPM and 40,000 TPM for new accounts; Tier 2 increases this significantly).</li>
+                  <li><strong>Billing:</strong> Monitor your OpenAI Usage Dashboard directly to avoid query blocks (`429 Quota Exceeded`).</li>
+                </ul>
+              </div>
+            ) : (
+              <div className="limit-card-content limit-card-content--local">
+                <div className="limit-card-header">
+                  <span className="limit-card-dot limit-card-dot--success" />
+                  <strong>Local Inference Hardware Capacity &amp; Constraints</strong>
+                </div>
+                <p>
+                  You are running local inference via <strong>llama.cpp (in-process/port 8001)</strong> or <strong>Ollama (port 11434)</strong>. Your constraints are bound entirely by your local machine:
+                </p>
+                <ul className="limit-bullets">
+                  <li><strong>RAM / VRAM:</strong> Standalone GGUF models are loaded into your RAM/VRAM. Ensure your machine has enough free memory (e.g. 8GB+ for 3B-8B models).</li>
+                  <li><strong>Inference Speed:</strong> Run-time latency is bound to CPU cores, GPU acceleration, and quantization (Q4 models offer the best balance of quality and speed).</li>
+                  <li><strong>Context Window:</strong> Default local context window is 2,048 tokens. Ensure long documents do not exceed this limit to prevent model output degradation.</li>
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* Reset Action */}
+          <div className="usage-actions">
+            <button className="settings-btn settings-btn--secondary" onClick={handleResetUsage}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+              Reset Usage Stats
+            </button>
+          </div>
         </div>
 
         {/* ===== Data Management ===== */}
