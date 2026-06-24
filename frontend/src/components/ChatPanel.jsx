@@ -38,6 +38,15 @@ export default function ChatPanel({
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
 
+  // Locked model state
+  const [lockedModel, setLockedModel] = useState(() => {
+    try {
+      return localStorage.getItem('lockedModel') || null;
+    } catch {
+      return null;
+    }
+  });
+
   // Feedback: per-message like/dislike/retry state
   const [feedbackMap, setFeedbackMap] = useState({});
   const [retryingId, setRetryingId] = useState(null);

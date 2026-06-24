@@ -126,7 +126,7 @@ export const api = {
       return data;
     });
   },
-  chat: (question, images = [], attachedText = null, attachedName = null, ragMode = 'hybrid', projectId = null) =>
+  chat: (question, images = [], attachedText = null, attachedName = null, ragMode = 'hybrid', projectId = null, lockedModel = null) =>
     request('/chat', {
       method: 'POST',
       body: JSON.stringify({
@@ -136,9 +136,10 @@ export const api = {
         attached_name: attachedName,
         rag_mode: ragMode,
         project_id: projectId,
+        locked_model: lockedModel,
       }),
     }),
-  chatStream: async (question, images = [], attachedText = null, attachedName = null, ragMode = 'hybrid', projectId = null, onChunk) => {
+  chatStream: async (question, images = [], attachedText = null, attachedName = null, ragMode = 'hybrid', projectId = null, onChunk, lockedModel = null) => {
     const response = await fetch(`${BASE}/chat-stream`, {
       method: 'POST',
       headers: {
@@ -151,6 +152,7 @@ export const api = {
         attached_name: attachedName,
         rag_mode: ragMode,
         project_id: projectId,
+        locked_model: lockedModel,
       }),
     });
 

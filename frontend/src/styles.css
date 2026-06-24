@@ -1707,7 +1707,8 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 8px 10px;
   border: none;
   background: transparent;
@@ -1727,6 +1728,50 @@ textarea {
   background: var(--accent-light, rgba(79, 70, 229, 0.1));
   color: var(--accent);
   font-weight: 500;
+}
+
+/* Model row container - aligns model item and lock button */
+.ms-model-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+/* Lock button - rounded like icon-btn */
+.ms-lock-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+}
+
+.ms-lock-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+.ms-lock-btn.locked {
+  color: var(--accent);
+  background: var(--accent-light, rgba(79, 70, 229, 0.15));
+}
+
+.ms-lock-btn.locked:hover:not(:disabled) {
+  background: var(--accent-light, rgba(79, 70, 229, 0.25));
+  color: var(--accent);
+}
+
+.ms-lock-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .ms-no-models {

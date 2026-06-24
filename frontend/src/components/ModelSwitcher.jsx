@@ -6,13 +6,22 @@ import { api } from '../api.js';
  * – Shows the currently active model name.
  * – Opens a popover listing local models + a free-text input.
  * – Saves the chosen model via POST /model-config.
+ * – Supports locking a model to prevent auto-switching.
  */
-export default function ModelSwitcher({ activeModel, setActiveModel, backendOk }) {
+export default function ModelSwitcher({ activeModel, setActiveModel, backendOk, onLockedModelChange }) {
   const [open, setOpen] = useState(false);
   const [localModels, setLocalModels] = useState([]);
   const [customInput, setCustomInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(null); // { type: 'ok'|'err', text }
+  const [lockedModel, setLockedModel] = useState(() => {
+    // Load locked model from localStorage on init
+    try {
+      return localStorage.getItem('lockedModel') || null;
+    } catch {
+      return null;
+    }
+  });
   const popoverRef = useRef(null);
 
   // Load current model + list whenever backend is ready
@@ -31,6 +40,18 @@ export default function ModelSwitcher({ activeModel, setActiveModel, backendOk }
   useEffect(() => {
     setCustomInput(activeModel);
   }, [activeModel]);
+
+  // Persist locked model and notify parent
+  useEffect(() => {
+    try {
+      if (lockedModel) {
+        localStorage.setItem('lockedModel', lockedModel);
+      } else {
+        localStorage.removeItem('lockedModel');
+      }
+    } catch {}
+    onLockedModelChange?.(lockedModel);
+  }, [lockedModel, onLockedModelChange]);
 
   // Close on outside click
   useEffect(() => {
@@ -66,6 +87,16 @@ export default function ModelSwitcher({ activeModel, setActiveModel, backendOk }
     }
   };
 
+  const toggleLock = (modelName) => {
+    if (lockedModel === modelName) {
+      setLockedModel(null);
+    } else {
+      setLockedModel(modelName);
+      // Also set as active model when locking
+      saveModel(modelName);
+    }
+  };
+
   if (!backendOk) return null;
 
   return (
@@ -84,6 +115,14 @@ export default function ModelSwitcher({ activeModel, setActiveModel, backendOk }
         </svg>
         <span className="model-switcher-label">
           {activeModel || 'No model'}
+          {lockedModel && (
+            <span className="model-lock-badge" title={`Locked to ${lockedModel}`}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </span>
+          )}
         </span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
           <polyline points="6 9 12 15 18 9" />
@@ -97,25 +136,41 @@ export default function ModelSwitcher({ activeModel, setActiveModel, backendOk }
           {/* Local models list */}
           {localModels.length > 0 && (
             <div className="ms-model-list">
-              {localModels.map((m) => (
-                <button
-                  key={m}
-                  className={`ms-model-item ${m === activeModel ? 'active' : ''}`}
-                  onClick={() => { setCustomInput(m); saveModel(m); }}
-                  disabled={saving}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="9" y="9" width="6" height="6" />
-                    <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M19 9h3M2 15h3M19 15h3" />
-                  </svg>
-                  <span>{m}</span>
-                  {m === activeModel && (
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 'auto', color: 'var(--accent)' }}>
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                </button>
-              ))}
+              {localModels.map((m) => {
+                const isLocked = lockedModel === m;
+                return (
+                  <div key={m} className="ms-model-row">
+                    <button
+                      className={`ms-model-item ${m === activeModel ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
+                      onClick={() => { setCustomInput(m); saveModel(m); }}
+                      disabled={saving}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="6" height="6" />
+                        <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M19 9h3M2 15h3M19 15h3" />
+                      </svg>
+                      <span>{m}</span>
+                      {m === activeModel && !isLocked && (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 'auto', color: 'var(--accent)' }}>
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      className={`ms-lock-btn ${isLocked ? 'locked' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); toggleLock(m); }}
+                      title={isLocked ? `Unlock ${m}` : `Lock to ${m}`}
+                      disabled={saving}
+                      aria-label={isLocked ? 'Unlock model' : 'Lock model'}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
 
